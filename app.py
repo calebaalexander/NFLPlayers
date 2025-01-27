@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, date
 
 # Configuration
 API_KEY = "6df769b0923f4826a1fbb8080e55cdf4"
@@ -108,7 +108,7 @@ def process_player_data(data):
     if 'Birth Date' in result_df.columns:
         result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
         result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
-        # Add zodiac sign
+        # Add zodiac sign right after birth date
         result_df['Zodiac'] = result_df['Birth Date'].apply(get_zodiac_sign)
         # Format birth date for display
         result_df['Birth Date'] = result_df['Birth Date'].dt.strftime('%Y-%m-%d')
@@ -116,6 +116,13 @@ def process_player_data(data):
     # Fill any NA values
     result_df['Team'] = result_df['Team'].fillna('Free Agent')
     result_df['Position'] = result_df['Position'].fillna('Unknown')
+    
+    # Reorder columns to ensure Zodiac comes right after Birth Date
+    cols = result_df.columns.tolist()
+    birth_date_idx = cols.index('Birth Date')
+    cols.remove('Zodiac')
+    cols.insert(birth_date_idx + 1, 'Zodiac')
+    result_df = result_df[cols]
     
     return result_df
 
@@ -125,10 +132,12 @@ def main():
     # Create sidebar for filters
     st.sidebar.header("Zodiac Calculator")
     
-    # Add date input for zodiac calculation
+    # Add date input for zodiac calculation with default date of Jan 1, 1988
+    default_date = date(1988, 1, 1)
     user_date = st.sidebar.date_input(
-        "Enter your birth date",
-        value=datetime.today()
+        "Enter your birth date (MM/DD/YYYY)",
+        value=default_date,
+        format="MM/DD/YYYY"
     )
     
     # Calculate and display user's zodiac sign
