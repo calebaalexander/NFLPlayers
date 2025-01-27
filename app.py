@@ -57,6 +57,9 @@ def process_player_data(data):
 def main():
     st.title("NFL Players Roster")
 
+    # Create sidebar for filters
+    st.sidebar.header("Filters")
+
     # Fetch data
     with st.spinner("Loading players..."):
         data = fetch_nfl_data()
@@ -65,23 +68,37 @@ def main():
         st.error("Failed to fetch data from the API")
         st.stop()
 
-    # Process and display data
+    # Process data
     df = process_player_data(data)
     
-    # Add search functionality
+    # Team filter in sidebar
+    all_teams = sorted(df['Team'].unique())
+    selected_team = st.sidebar.selectbox(
+        "Select Team",
+        ["All Teams"] + list(all_teams)
+    )
+
+    # Filter based on team selection
+    filtered_df = df
+    if selected_team != "All Teams":
+        filtered_df = df[df['Team'] == selected_team]
+
+    # Add search functionality in main area
     search = st.text_input("Search players", "")
     
-    # Filter based on search
-    filtered_df = df
+    # Apply search filter
     if search:
         search_lower = search.lower()
         mask = (
-            df['First Name'].str.lower().str.contains(search_lower, na=False) |
-            df['Last Name'].str.lower().str.contains(search_lower, na=False) |
-            df['Team'].str.lower().str.contains(search_lower, na=False) |
-            df['College'].str.lower().str.contains(search_lower, na=False)
+            filtered_df['First Name'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Last Name'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Team'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['College'].str.lower().str.contains(search_lower, na=False)
         )
-        filtered_df = df[mask]
+        filtered_df = filtered_df[mask]
+
+    # Display metrics
+    st.write(f"Showing {len(filtered_df)} players")
 
     # Display table
     st.dataframe(
