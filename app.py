@@ -108,12 +108,16 @@ def process_player_data(data):
     if 'Birth Date' in result_df.columns:
         result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
         result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
+        # Add zodiac sign right after birth date
         result_df['Zodiac'] = result_df['Birth Date'].apply(get_zodiac_sign)
+        # Format birth date for display
         result_df['Birth Date'] = result_df['Birth Date'].dt.strftime('%Y-%m-%d')
     
+    # Fill any NA values
     result_df['Team'] = result_df['Team'].fillna('Free Agent')
     result_df['Position'] = result_df['Position'].fillna('Unknown')
     
+    # Reorder columns to ensure Zodiac comes right after Birth Date
     cols = result_df.columns.tolist()
     birth_date_idx = cols.index('Birth Date')
     cols.remove('Zodiac')
@@ -123,14 +127,14 @@ def process_player_data(data):
     return result_df
 
 def apply_color_formatting(df, compatible_signs):
-    """Apply color formatting for compatible signs and repeated numbers"""
+    """Apply formatting to highlight compatible zodiacs and repeated jersey numbers"""
     def highlight_compatible(row):
         return ['background-color: yellow' if row['Zodiac'] in compatible_signs else '' for _ in row]
-
-    def highlight_repeated_numbers(column):
-        return ['background-color: green' if column['Number'].duplicated(keep=False) else '' for _ in column]
-
-    styled_df = df.style.apply(highlight_compatible, axis=1).apply(highlight_repeated_numbers)
+    
+    def highlight_repeated_numbers(row):
+        return ['background-color: green' if df['Number'].tolist().count(row['Number']) > 1 else '' for _ in row]
+    
+    styled_df = df.style.apply(highlight_compatible, axis=1).apply(highlight_repeated_numbers, axis=1)
     return styled_df
 
 def main():
@@ -149,14 +153,10 @@ def main():
     show_compatible = st.sidebar.checkbox("Only compatible players", value=False)
     
     with st.spinner("Loading..."):
-
-
-```python
         data = fetch_nfl_data()
-    
-    if not data:
-        st.error("Failed to load data")
-        st.stop()
+        if not data:
+            st.error("Failed to load data")
+            st.stop()
 
     df = process_player_data(data)
     
