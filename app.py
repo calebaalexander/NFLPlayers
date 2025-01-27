@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import plotly.express as px
 from datetime import datetime
+import numpy as np
 
 # Configuration
 API_KEY = "6df769b0923f4826a1fbb8080e55cdf4"
@@ -16,6 +17,16 @@ def fetch_nfl_data():
         return response.json()
     else:
         st.error(f"Error fetching data: {response.status_code}")
+        return None
+
+def calculate_age(birth_date):
+    """Calculate age from birth date, handling invalid dates"""
+    try:
+        birth_date = pd.to_datetime(birth_date)
+        today = pd.Timestamp.now()
+        age = (today - birth_date).days / 365.25
+        return int(age) if pd.notnull(age) else None
+    except:
         return None
 
 def process_player_data(data):
@@ -57,9 +68,14 @@ def process_player_data(data):
     
     # Calculate age if birth date is available
     if 'Birth Date' in result_df.columns:
-        result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
-        result_df['Age'] = (pd.Timestamp.now() - result_df['Birth Date']).dt.total_seconds() / (365.25 * 24 * 60 * 60)
-        result_df['Age'] = result_df['Age'].round(0).astype(int)
+        result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
+        # Fill NaN ages with 0 for display purposes
+        result_df['Age'] = result_df['Age'].fillna(0).astype(int)
+    
+    # Convert experience to numeric, handling non-numeric values
+    if 'Experience' in result_df.columns:
+        result_df['Experience'] = pd.to_numeric(result_df['Experience'], errors='coerce')
+        result_df['Experience'] = result_df['Experience'].fillna(0).astype(int)
     
     return result_df
 
@@ -82,14 +98,14 @@ def main():
     if 'Team' in df.columns:
         selected_teams = st.sidebar.multiselect(
             "Select Teams",
-            options=sorted(df['Team'].unique()),
+            options=sorted(df['Team'].dropna().unique()),
             default=[]
         )
 
     if 'Position' in df.columns:
         selected_positions = st.sidebar.multiselect(
             "Select Positions",
-            options=sorted(df['Position'].unique()),
+            options=sorted(df['Position'].dropna().unique()),
             default=[]
         )
 
@@ -106,10 +122,14 @@ def main():
         st.metric("Total Players", len(filtered_df))
     with col2:
         if 'Age' in filtered_df.columns:
-            st.metric("Average Age", round(filtered_df['Age'].mean(), 1))
+            avg_age = filtered_df[filtered_df['Age'] > 0]['Age'].mean()
+            if pd.notnull(avg_age):
+                st.metric("Average Age", round(avg_age, 1))
     with col3:
         if 'Experience' in filtered_df.columns:
-            st.metric("Average Experience", round(pd.to_numeric(filtered_df['Experience'], errors='coerce').mean(), 1))
+            avg_exp = filtered_df['Experience'].mean()
+            if pd.notnull(avg_exp):
+                st.metric("Average Experience", round(avg_exp, 1))
 
     # Create visualizations
     if 'Position' in filtered_df.columns:
@@ -122,15 +142,20 @@ def main():
 
         if 'Age' in filtered_df.columns:
             st.subheader("Age Distribution by Position")
-            fig_age = px.box(filtered_df, 
-                           x="Position", 
-                           y="Age",
-                           title="Age Distribution by Position")
-            st.plotly_chart(fig_age)
+            valid_age_df = filtered_df[filtered_df['Age'] > 0]
+            if not valid_age_df.empty:
+                fig_age = px.box(valid_age_df, 
+                               x="Position", 
+                               y="Age",
+                               title="Age Distribution by Position")
+                st.plotly_chart(fig_age)
 
     # Display player table
     st.subheader("Player List")
-    st.dataframe(filtered_df.sort_values('Full Name' if 'Full Name' in filtered_df.columns else filtered_df.columns[0]))
+    display_df = filtered_df.copy()
+    if 'Age' in display_df.columns:
+        display_df.loc[display_df['Age'] == 0, 'Age'] = None
+    st.dataframe(display_df.sort_values('Full Name' if 'Full Name' in display_df.columns else display_df.columns[0]))
 
     # Export functionality
     if st.button("Export to CSV"):
