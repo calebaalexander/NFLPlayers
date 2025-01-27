@@ -29,84 +29,226 @@ def get_zodiac_sign(birth_date):
             (1023, 'Libra'),     # Sep 23 - Oct 22
             (1122, 'Scorpio'),   # Oct 23 - Nov 21
             (1222, 'Sagittarius'),# Nov 22 - Dec 21
-            (1231, 'Capricorn')  # Dec 22 - Dec 31
+            (1232, 'Capricorn')  # Dec 22 - Dec 31
         ]
-
-        birth_day_of_year = month * 100 + day
-
+        
+        date_num = month * 100 + day
+        
         for cutoff, sign in zodiac_dates:
-            if birth_day_of_year <= cutoff:
+            if date_num <= cutoff:
                 return sign
         return 'Capricorn'
-    except Exception as e:
-        return 'Unknown'
+    except:
+        return None
 
-def fetch_nfl_players():
-    """Fetch NFL players using the API"""
+def get_compatible_signs(zodiac):
+    """Return most compatible zodiac signs"""
+    compatibility = {
+        'Aries': ['Leo', 'Sagittarius', 'Gemini'],
+        'Taurus': ['Virgo', 'Capricorn', 'Cancer'],
+        'Gemini': ['Libra', 'Aquarius', 'Aries'],
+        'Cancer': ['Scorpio', 'Pisces', 'Taurus'],
+        'Leo': ['Aries', 'Sagittarius', 'Gemini'],
+        'Virgo': ['Taurus', 'Capricorn', 'Cancer'],
+        'Libra': ['Gemini', 'Aquarius', 'Leo'],
+        'Scorpio': ['Cancer', 'Pisces', 'Virgo'],
+        'Sagittarius': ['Aries', 'Leo', 'Libra'],
+        'Capricorn': ['Taurus', 'Virgo', 'Pisces'],
+        'Aquarius': ['Gemini', 'Libra', 'Sagittarius'],
+        'Pisces': ['Cancer', 'Scorpio', 'Capricorn']
+    }
+    return compatibility.get(zodiac, [])
+
+def fetch_nfl_data():
+    """Fetch NFL player data from the API"""
+    params = {'key': API_KEY}
+    response = requests.get(API_URL, params=params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f"Error fetching data: {response.status_code}")
+        return None
+
+def calculate_age(birth_date):
+    """Calculate age from birth date, handling invalid dates"""
     try:
-        headers = {"Ocp-Apim-Subscription-Key": API_KEY}
-        response = requests.get(API_URL, headers=headers)
-        if response.status_code == 200:
-            return response.json()
+        birth_date = pd.to_datetime(birth_date)
+        today = pd.Timestamp.now()
+        age = (today - birth_date).days / 365.25
+        return int(age) if pd.notnull(age) else None
+    except:
+        return None
+
+def process_player_data(data):
+    """Convert API data to pandas DataFrame with selected columns"""
+    df = pd.DataFrame(data)
+    
+    # Select and rename columns
+    columns = {
+        'Team': 'Team',
+        'Position': 'Position',
+        'Number': 'Number',
+        'FirstName': 'First Name',
+        'LastName': 'Last Name',
+        'Height': 'Height',
+        'Weight': 'Weight',
+        'BirthDate': 'Birth Date',
+        'College': 'College'
+    }
+    
+    # Create new dataframe with selected columns
+    result_df = pd.DataFrame()
+    for api_col, display_col in columns.items():
+        if api_col in df.columns:
+            result_df[display_col] = df[api_col]
         else:
-            st.error("Failed to fetch data from the API.")
-            return []
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
-        return []
+            result_df[display_col] = None
+    
+    # Format birth date and calculate age
+    if 'Birth Date' in result_df.columns:
+        result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
+        result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
+        # Add zodiac sign right after birth date
+        result_df['Zodiac'] = result_df['Birth Date'].apply(get_zodiac_sign)
+        # Format birth date for display
+        result_df['Birth Date'] = result_df['Birth Date'].dt.strftime('%Y-%m-%d')
+    
+    # Fill any NA values
+    result_df['Team'] = result_df['Team'].fillna('Free Agent')
+    result_df['Position'] = result_df['Position'].fillna('Unknown')
+    
+    # Reorder columns to ensure Zodiac comes right after Birth Date
+    cols = result_df.columns.tolist()
+    birth_date_idx = cols.index('Birth Date')
+    cols.remove('Zodiac')
+    cols.insert(birth_date_idx + 1, 'Zodiac')
+    result_df = result_df[cols]
+    
+    return result_df
 
 def main():
-    st.title("NFL Players Zodiac Sign and Jersey Analysis")
+    st.title("NFL Players Roster: Zodiac Edition")
 
-    # Fetch NFL players
-    data = fetch_nfl_players()
+    # Create sidebar for filters
+    st.sidebar.header("Zodiac Calculator")
+    
+    # Add date input for zodiac calculation with default date of Jan 1, 1988
+    default_date = date(1988, 1, 1)
+    user_date = st.sidebar.date_input(
+        "Enter your birth date (MM/DD/YYYY)",
+        value=default_date,
+        format="MM/DD/YYYY"
+    )
+    
+    # Calculate and display user's zodiac sign
+    user_zodiac = get_zodiac_sign(user_date)
+    st.sidebar.write(f"Your Zodiac Sign: **{user_zodiac}**")
+    
+    # Display compatible signs
+    compatible_signs = get_compatible_signs(user_zodiac)
+    st.sidebar.write("Most Compatible Signs:")
+    for sign in compatible_signs:
+        st.sidebar.write(f"- {sign}")
+        
+    # Add toggle for compatibility filter
+    show_compatible = st.sidebar.checkbox("Show only compatible players", value=False)
+
+    st.sidebar.divider()
+    st.sidebar.header("Filters")
+
+    # Fetch data
+    with st.spinner("Loading players..."):
+        data = fetch_nfl_data()
+    
     if not data:
+        st.error("Failed to fetch data from the API")
         st.stop()
 
     # Process data
-    df = pd.DataFrame(data)
-    if df.empty:
-        st.error("No data available to display.")
-        return
+    df = process_player_data(data)
+    
+    # Get unique teams and positions
+    unique_teams = df['Team'].unique()
+    unique_positions = df['Position'].unique()
+    valid_teams = sorted([team for team in unique_teams if team])
+    valid_positions = sorted([pos for pos in unique_positions if pos])
+    
+    # Team filter in sidebar
+    selected_team = st.sidebar.selectbox(
+        "Select Team",
+        ["All Teams"] + valid_teams
+    )
+    
+    # Position filter in sidebar
+    selected_position = st.sidebar.selectbox(
+        "Select Position",
+        ["All Positions"] + valid_positions
+    )
 
-    df = df[['Name', 'BirthDate', 'Jersey', 'Position', 'Team']]
-    df['BirthDate'] = pd.to_datetime(df['BirthDate'], errors='coerce')
-    df['Zodiac'] = df['BirthDate'].apply(get_zodiac_sign)
+    # Filter based on selections
+    filtered_df = df
 
-    # Zodiac Compatibility (for demonstration purposes, simplified logic)
-    zodiac_compatibility = {
-        'Aries': ['Leo', 'Sagittarius'],
-        'Taurus': ['Virgo', 'Capricorn'],
-        'Gemini': ['Libra', 'Aquarius'],
-        'Cancer': ['Scorpio', 'Pisces'],
-        'Leo': ['Aries', 'Sagittarius'],
-        'Virgo': ['Taurus', 'Capricorn'],
-        'Libra': ['Gemini', 'Aquarius'],
-        'Scorpio': ['Cancer', 'Pisces'],
-        'Sagittarius': ['Aries', 'Leo'],
-        'Capricorn': ['Taurus', 'Virgo'],
-        'Aquarius': ['Gemini', 'Libra'],
-        'Pisces': ['Cancer', 'Scorpio']
-    }
+    # Apply zodiac compatibility filter
+    if show_compatible:
+        filtered_df = filtered_df[filtered_df['Zodiac'].isin(compatible_signs)]
 
-    def compatible_zodiacs(zodiac):
-        return ', '.join(zodiac_compatibility.get(zodiac, []))
+    # Apply team filter
+    if selected_team != "All Teams":
+        filtered_df = filtered_df[filtered_df['Team'] == selected_team]
+    
+    # Apply position filter
+    if selected_position != "All Positions":
+        filtered_df = filtered_df[filtered_df['Position'] == selected_position]
 
-    df['Compatible Zodiacs'] = df['Zodiac'].apply(compatible_zodiacs)
+    # Add search functionality in main area
+    search = st.text_input("Search players", "")
+    
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        mask = (
+            filtered_df['First Name'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Last Name'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Team'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['College'].str.lower().str.contains(search_lower, na=False)
+        )
+        filtered_df = filtered_df[mask]
 
-    # Highlighting Function
-    def highlight_cells(val, col):
-        if col == 'Compatible Zodiacs' and val != '':
-            return 'background-color: yellow'
-        elif col == 'Jersey' and isinstance(val, (int, float)) and int(val) % 11 == 0:
-            return 'background-color: green'
-        return ''
+    # Display metrics
+    if show_compatible:
+        st.write(f"Showing {len(filtered_df)} compatible players")
+    else:
+        st.write(f"Showing {len(filtered_df)} players")
 
-    styled_df = df.style.applymap(lambda val: highlight_cells(val, 'Compatible Zodiacs'), subset=['Compatible Zodiacs'])
-    styled_df = styled_df.applymap(lambda val: highlight_cells(val, 'Jersey'), subset=['Jersey'])
+    # Display table
+    st.dataframe(
+        filtered_df,
+        hide_index=True,
+        column_config={
+            "Number": st.column_config.NumberColumn(
+                "Number",
+                format="%d"
+            ),
+            "Weight": st.column_config.NumberColumn(
+                "Weight",
+                format="%d lbs"
+            ),
+            "Age": st.column_config.NumberColumn(
+                "Age",
+                format="%d"
+            )
+        }
+    )
 
-    st.write("### NFL Players Data")
-    st.dataframe(styled_df, use_container_width=True)
+    # Export functionality
+    if st.button("Export to CSV"):
+        csv = filtered_df.to_csv(index=False)
+        st.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name=f"nfl_players_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
 
 if __name__ == "__main__":
     main()
