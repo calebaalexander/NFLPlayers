@@ -31,6 +31,10 @@ def process_player_data(data):
     """Convert API data to pandas DataFrame with selected columns"""
     df = pd.DataFrame(data)
     
+    # Print raw data for debugging
+    if st.checkbox("Show raw data sample"):
+        st.write("Sample of raw data:", df.head())
+    
     # Select and rename columns
     columns = {
         'Team': 'Team',
@@ -44,13 +48,20 @@ def process_player_data(data):
     }
     
     # Create new dataframe with selected columns
-    result_df = df[columns.keys()].copy()
-    result_df.columns = columns.values()
+    result_df = pd.DataFrame()
+    for api_col, display_col in columns.items():
+        if api_col in df.columns:
+            result_df[display_col] = df[api_col]
+        else:
+            result_df[display_col] = None
     
-    # Format birth date
+    # Format birth date and calculate age
     if 'Birth Date' in result_df.columns:
         result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date']).dt.strftime('%Y-%m-%d')
         result_df['Age'] = df['BirthDate'].apply(calculate_age)
+    
+    # Fill any NA values in Team column
+    result_df['Team'] = result_df['Team'].fillna('Free Agent')
     
     return result_df
 
@@ -71,11 +82,14 @@ def main():
     # Process data
     df = process_player_data(data)
     
+    # Get unique teams and handle None values
+    unique_teams = df['Team'].unique()
+    valid_teams = sorted([team for team in unique_teams if team])
+    
     # Team filter in sidebar
-    all_teams = sorted(df['Team'].unique())
     selected_team = st.sidebar.selectbox(
         "Select Team",
-        ["All Teams"] + list(all_teams)
+        ["All Teams"] + valid_teams
     )
 
     # Filter based on team selection
