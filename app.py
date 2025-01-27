@@ -38,6 +38,7 @@ def process_player_data(data):
     # Select and rename columns
     columns = {
         'Team': 'Team',
+        'Position': 'Position',
         'Number': 'Number',
         'FirstName': 'First Name',
         'LastName': 'Last Name',
@@ -60,8 +61,9 @@ def process_player_data(data):
         result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date']).dt.strftime('%Y-%m-%d')
         result_df['Age'] = df['BirthDate'].apply(calculate_age)
     
-    # Fill any NA values in Team column
+    # Fill any NA values
     result_df['Team'] = result_df['Team'].fillna('Free Agent')
+    result_df['Position'] = result_df['Position'].fillna('Unknown')
     
     return result_df
 
@@ -82,20 +84,34 @@ def main():
     # Process data
     df = process_player_data(data)
     
-    # Get unique teams and handle None values
+    # Get unique teams and positions
     unique_teams = df['Team'].unique()
+    unique_positions = df['Position'].unique()
     valid_teams = sorted([team for team in unique_teams if team])
+    valid_positions = sorted([pos for pos in unique_positions if pos])
     
     # Team filter in sidebar
     selected_team = st.sidebar.selectbox(
         "Select Team",
         ["All Teams"] + valid_teams
     )
+    
+    # Position filter in sidebar
+    selected_position = st.sidebar.selectbox(
+        "Select Position",
+        ["All Positions"] + valid_positions
+    )
 
-    # Filter based on team selection
+    # Filter based on selections
     filtered_df = df
+
+    # Apply team filter
     if selected_team != "All Teams":
-        filtered_df = df[df['Team'] == selected_team]
+        filtered_df = filtered_df[filtered_df['Team'] == selected_team]
+    
+    # Apply position filter
+    if selected_position != "All Positions":
+        filtered_df = filtered_df[filtered_df['Position'] == selected_position]
 
     # Add search functionality in main area
     search = st.text_input("Search players", "")
