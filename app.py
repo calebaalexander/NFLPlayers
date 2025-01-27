@@ -127,7 +127,7 @@ def process_player_data(data):
     return result_df
 
 def main():
-    st.title("NFL Players Roster")
+    st.title("NFL Players Roster: Zodiac Edition")
 
     # Create sidebar for filters
     st.sidebar.header("Zodiac Calculator")
@@ -149,6 +149,9 @@ def main():
     st.sidebar.write("Most Compatible Signs:")
     for sign in compatible_signs:
         st.sidebar.write(f"- {sign}")
+        
+    # Add toggle for compatibility filter
+    show_compatible = st.sidebar.checkbox("Show only compatible players", value=False)
 
     st.sidebar.divider()
     st.sidebar.header("Filters")
@@ -185,6 +188,10 @@ def main():
     # Filter based on selections
     filtered_df = df
 
+    # Apply zodiac compatibility filter
+    if show_compatible:
+        filtered_df = filtered_df[filtered_df['Zodiac'].isin(compatible_signs)]
+
     # Apply team filter
     if selected_team != "All Teams":
         filtered_df = filtered_df[filtered_df['Team'] == selected_team]
@@ -208,7 +215,10 @@ def main():
         filtered_df = filtered_df[mask]
 
     # Display metrics
-    st.write(f"Showing {len(filtered_df)} players")
+    if show_compatible:
+        st.write(f"Showing {len(filtered_df)} compatible players")
+    else:
+        st.write(f"Showing {len(filtered_df)} players")
 
     # Display table
     st.dataframe(
