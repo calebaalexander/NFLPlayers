@@ -3,33 +3,16 @@ import pandas as pd
 import requests
 from datetime import datetime, date
 
-# [Previous code for API and helper functions remains the same until main()]
+def highlight_compatible_signs(val, compatible_signs):
+    """Return CSS style if zodiac sign is compatible"""
+    return 'background-color: yellow' if val in compatible_signs else ''
 
-def is_repeating_number(num):
-    """Check if a number is repeating (e.g., 22, 33, 44)"""
-    if pd.isna(num) or not isinstance(num, (int, float)):
-        return False
-    num_str = str(int(num))
-    return len(num_str) > 1 and len(set(num_str)) == 1
-
-def style_df(row, compatible_signs):
-    """Create style dictionary for each row"""
-    styles = {}
-    
-    # Style for zodiac column
-    if row['Zodiac'] in compatible_signs:
-        styles['Zodiac'] = 'background-color: #ffeb3b'
-    
-    # Style for number column
-    if is_repeating_number(row['Number']):
-        styles['Number'] = 'background-color: #4caf50'
-    
-    # Fill in empty styles for other columns
-    for col in row.index:
-        if col not in styles:
-            styles[col] = ''
-    
-    return pd.Series(styles)
+def highlight_repeating_numbers(val):
+    """Return CSS style if number is repeating"""
+    if pd.isna(val) or not isinstance(val, (int, float)):
+        return ''
+    num_str = str(int(val))
+    return 'background-color: green' if len(num_str) > 1 and len(set(num_str)) == 1 else ''
 
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
@@ -91,7 +74,7 @@ def main():
     )
 
     # Filter based on selections
-    filtered_df = df
+    filtered_df = df.copy()
 
     # Apply zodiac compatibility filter
     if show_compatible:
@@ -125,10 +108,12 @@ def main():
     else:
         st.write(f"Showing {len(filtered_df)} players")
 
-    # Apply styling to dataframe
-    styled_df = filtered_df.style.apply(lambda x: style_df(x, compatible_signs), axis=1)
+    # Apply styling
+    styled_df = filtered_df.style\
+        .applymap(lambda x: highlight_compatible_signs(x, compatible_signs), subset=['Zodiac'])\
+        .applymap(highlight_repeating_numbers, subset=['Number'])
 
-    # Display styled dataframe
+    # Display the styled dataframe
     st.dataframe(
         styled_df,
         hide_index=True,
