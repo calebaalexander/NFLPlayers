@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 from datetime import datetime, date
 
-# [Previous code remains the same until the main() function]
+# [Previous code for API and helper functions remains the same until main()]
 
 def is_repeating_number(num):
     """Check if a number is repeating (e.g., 22, 33, 44)"""
@@ -11,6 +11,25 @@ def is_repeating_number(num):
         return False
     num_str = str(int(num))
     return len(num_str) > 1 and len(set(num_str)) == 1
+
+def style_df(row, compatible_signs):
+    """Create style dictionary for each row"""
+    styles = {}
+    
+    # Style for zodiac column
+    if row['Zodiac'] in compatible_signs:
+        styles['Zodiac'] = 'background-color: #ffeb3b'
+    
+    # Style for number column
+    if is_repeating_number(row['Number']):
+        styles['Number'] = 'background-color: #4caf50'
+    
+    # Fill in empty styles for other columns
+    for col in row.index:
+        if col not in styles:
+            styles[col] = ''
+    
+    return pd.Series(styles)
 
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
@@ -106,27 +125,12 @@ def main():
     else:
         st.write(f"Showing {len(filtered_df)} players")
 
-    # Create style conditions for the dataframe
-    def style_dataframe(df):
-        styles = []
-        
-        # Style for compatible zodiac signs (yellow background)
-        styles.append(
-            df.style.apply(lambda x: ['background-color: #ffeb3b' if zodiac in compatible_signs else '' 
-                                    for zodiac in x], subset=['Zodiac'])
-        )
-        
-        # Style for repeating numbers (green background)
-        styles.append(
-            df.style.apply(lambda x: ['background-color: #4caf50' if is_repeating_number(num) else '' 
-                                    for num in x], subset=['Number'])
-        )
-        
-        return df.style.apply(lambda x: [''] * len(x))  # Base style
+    # Apply styling to dataframe
+    styled_df = filtered_df.style.apply(lambda x: style_df(x, compatible_signs), axis=1)
 
     # Display styled dataframe
     st.dataframe(
-        style_dataframe(filtered_df),
+        styled_df,
         hide_index=True,
         column_config={
             "Number": st.column_config.NumberColumn(
