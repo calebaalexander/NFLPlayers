@@ -3,12 +3,15 @@ import pandas as pd
 import requests
 from datetime import datetime, date
 
+# RapidAPI Configuration
+RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
+RAPIDAPI_HOST = "nfl-football-api.p.rapidapi.com"
+API_URL = "https://nfl-football-api.p.rapidapi.com/nfl-leagueinfo"
+
 def fetch_nfl_data(api_key):
-    """Fetch NFL team data from RapidAPI"""
-    url = "https://nfl-api-data.p.rapidapi.com/nfl-team-listing/v1/data"
-    
+    """Fetch NFL data from RapidAPI"""
     headers = {
-        "x-rapidapi-host": "nfl-api-data.p.rapidapi.com",
+        "x-rapidapi-host": RAPIDAPI_HOST,
         "x-rapidapi-key": api_key
     }
     
@@ -17,7 +20,7 @@ def fetch_nfl_data(api_key):
         st.sidebar.write("Making API request...")
         st.sidebar.write("Headers:", {k: '***' if 'key' in k.lower() else v for k, v in headers.items()})
         
-        response = requests.get(url, headers=headers)
+        response = requests.get(API_URL, headers=headers)
         
         # Print response details for debugging
         st.sidebar.write(f"Response Status: {response.status_code}")
@@ -40,37 +43,31 @@ def process_nfl_data(data):
         return pd.DataFrame()
     
     try:
-        df = pd.DataFrame(data)
+        # First, let's examine the structure of the data
+        st.sidebar.write("Data structure received:", type(data))
         
-        # Rename columns to match our display format
-        column_mapping = {
-            'team_name': 'Team',
-            'team_city': 'City',
-            'team_conference': 'Conference',
-            'team_division': 'Division'
-        }
+        # Convert the data to a DataFrame based on its structure
+        if isinstance(data, list):
+            df = pd.DataFrame(data)
+        elif isinstance(data, dict):
+            # If it's a dictionary, we might need to extract the relevant part
+            # We'll print the keys to help understand the structure
+            st.sidebar.write("Available data keys:", data.keys())
+            # For now, we'll try to convert the whole dict to a dataframe
+            df = pd.DataFrame([data])
+        else:
+            st.error("Unexpected data format received")
+            st.write("Raw data:", data)
+            return pd.DataFrame()
         
-        df = df.rename(columns=column_mapping)
-        
-        # Fill any NA values
-        df['Team'] = df['Team'].fillna('Unknown')
-        df['Conference'] = df['Conference'].fillna('Unknown')
-        df['Division'] = df['Division'].fillna('Unknown')
-        df['City'] = df['City'].fillna('Unknown')
+        # Display the columns we received
+        st.sidebar.write("Columns in data:", df.columns.tolist())
         
         return df
     except Exception as e:
         st.error(f"Error processing data: {str(e)}")
         st.write("Raw data received:", data)
         return pd.DataFrame()
-
-def highlight_conference(val, conference):
-    """Return CSS style for conference"""
-    colors = {
-        'AFC': 'background-color: #ffcdd2',
-        'NFC': 'background-color: #c8e6c9'
-    }
-    return colors.get(val, '')
 
 def main():
     st.set_page_config(page_title="NFL Teams Explorer", page_icon="🏈", layout="wide")
@@ -88,78 +85,24 @@ def main():
         st.warning("Please enter your RapidAPI key in the sidebar to fetch NFL data.")
         return
     
-    # Create tabs for different views
-    tab1, tab2 = st.tabs(["Teams", "Zodiac Calculator"])
-    
-    with tab1:
-        # Fetch data using the provided API key
-        with st.spinner("Loading NFL team data..."):
-            data = fetch_nfl_data(api_key)
-            
-            if not data:
-                return
-            
-            # Process data
-            df = process_nfl_data(data)
-            
-            if df.empty:
-                return
-            
-            # Create columns for layout
-            col1, col2 = st.columns([1, 3])
-            
-            with col1:
-                st.subheader("Filters")
-                
-                # Conference filter
-                conferences = ['All Conferences'] + sorted(df['Conference'].unique().tolist())
-                selected_conference = st.selectbox('Conference', conferences)
-                
-                # Division filter
-                divisions = ['All Divisions'] + sorted(df['Division'].unique().tolist())
-                selected_division = st.selectbox('Division', divisions)
-                
-                # Search box
-                search = st.text_input("Search teams")
-            
-            with col2:
-                # Apply filters
-                filtered_df = df.copy()
-                
-                if selected_conference != 'All Conferences':
-                    filtered_df = filtered_df[filtered_df['Conference'] == selected_conference]
-                
-                if selected_division != 'All Divisions':
-                    filtered_df = filtered_df[filtered_df['Division'] == selected_division]
-                
-                # Apply search
-                if search:
-                    search_lower = search.lower()
-                    mask = (
-                        filtered_df['Team'].str.lower().str.contains(search_lower, na=False) |
-                        filtered_df['City'].str.lower().str.contains(search_lower, na=False)
-                    )
-                    filtered_df = filtered_df[mask]
-                
-                # Style the dataframe
-                styled_df = filtered_df.style.applymap(
-                    lambda x: highlight_conference(x, selected_conference),
-                    subset=['Conference']
-                )
-                
-                # Display results
-                st.write(f"Showing {len(filtered_df)} teams")
-                st.dataframe(styled_df, hide_index=True)
-                
-                # Export functionality
-                if st.button("Export to CSV"):
-                    csv = filtered_df.to_csv(index=False)
-                    st.download_button(
-                        label="Download CSV",
-                        data=csv,
-                        file_name=f"nfl_teams_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
+    # Fetch data using the provided API key
+    with st.spinner("Loading NFL data..."):
+        data = fetch_nfl_data(api_key)
+        
+        if not data:
+            return
+        
+        # Process data
+        df = process_nfl_data(data)
+        
+        if df.empty:
+            return
+        
+        # Display the raw data for now so we can see what we're working with
+        st.write("### Raw NFL Data")
+        st.write(df)
+        
+        # Once we see the data structure, we can add more specific formatting and filtering options
 
 if __name__ == "__main__":
     main()
