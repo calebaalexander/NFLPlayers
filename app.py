@@ -6,44 +6,40 @@ from datetime import datetime, date
 # RapidAPI Configuration
 RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
 RAPIDAPI_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
+API_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
 
 def get_nfl_data():
     """Fetch NFL data from Tank01 API"""
-    url = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLDFS"
+    endpoints = [
+        "/getNFLTeams",  # Try getting teams list first
+        "/getNFLPlayers",  # Then try players
+        "/getNFLDFS"  # Finally try DFS data
+    ]
     
-    querystring = {"date": "20250119"}
     headers = {
         "x-rapidapi-host": RAPIDAPI_HOST,
         "x-rapidapi-key": RAPIDAPI_KEY
     }
     
-    try:
-        # Add debug information
-        st.sidebar.write("Making API request...")
-        st.sidebar.write("URL:", url)
-        st.sidebar.write("Query params:", querystring)
-        st.sidebar.write("Headers:", {k: '***' if 'key' in k.lower() else v for k, v in headers.items()})
-        
-        response = requests.get(url, headers=headers, params=querystring)
-        
-        # Print response details for debugging
-        st.sidebar.write(f"Response Status: {response.status_code}")
-        if response.status_code != 200:
-            st.sidebar.write("Response Content:", response.text)
-        
-        if response.status_code == 200:
-            return response.json()
-        elif response.status_code == 403:
-            st.error("Error 403: Unauthorized. Please check your API subscription.")
-            st.sidebar.write("Full response:", response.text)
-        else:
-            st.error(f"Error {response.status_code}: {response.text}")
-        
-        return None
+    st.sidebar.write("Testing API endpoints...")
+    
+    for endpoint in endpoints:
+        url = f"{API_URL}{endpoint}"
+        st.sidebar.write(f"Trying endpoint: {endpoint}")
+        try:
+            response = requests.get(url, headers=headers)
+            st.sidebar.write(f"Status: {response.status_code}")
             
-    except requests.exceptions.RequestException as e:
-        st.error(f"Request error: {str(e)}")
-        return None
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 403:
+                st.sidebar.write("Unauthorized access")
+            else:
+                st.sidebar.write(f"Error: {response.text}")
+        except Exception as e:
+            st.sidebar.write(f"Error with {endpoint}: {str(e)}")
+    
+    return None
 
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
@@ -105,10 +101,15 @@ def process_data(data):
     try:
         # Print raw data structure for debugging
         st.sidebar.write("Raw data type:", type(data))
-        st.sidebar.write("Raw data keys:", data.keys() if isinstance(data, dict) else "No keys")
         
-        if isinstance(data, dict) and 'body' in data:
-            data = data['body']
+        if isinstance(data, dict):
+            # Check for known data structures
+            if 'body' in data:
+                data = data['body']
+            elif 'teams' in data:
+                data = data['teams']
+            elif 'players' in data:
+                data = data['players']
         
         if isinstance(data, list):
             df = pd.DataFrame(data)
@@ -134,6 +135,15 @@ def main():
     st.set_page_config(page_title="NFL Teams Explorer", page_icon="🏈", layout="wide")
     st.title("🏈 NFL Teams Explorer")
     
+    # Add API details to sidebar
+    st.sidebar.title("API Configuration")
+    st.sidebar.markdown("""
+    **Current API Details:**
+    - Host: tank01-nfl-live-in-game-real-time-statistics-nfl
+    - Key: Configured
+    - Testing multiple endpoints...
+    """)
+    
     # Create tabs
     tab1, tab2 = st.tabs(["NFL Data", "Zodiac Calculator"])
     
@@ -153,26 +163,21 @@ def main():
                     
                     with col1:
                         st.subheader("Filters")
+                        search = st.text_input("Search")
                         
-                        # Add filters based on available columns
-                        available_filters = []
+                        # Dynamic filters based on data
+                        filters = {}
                         for col in df.columns:
                             if df[col].nunique() < 50:  # Only add filter for columns with reasonable number of unique values
-                                available_filters.append(col)
-                        
-                        selected_filters = {}
-                        for filter_col in available_filters:
-                            values = ['All'] + sorted(df[filter_col].unique().tolist())
-                            selected_filters[filter_col] = st.selectbox(f'Filter by {filter_col}', values)
-                        
-                        # Search box
-                        search = st.text_input("Search")
+                                options = ['All'] + sorted(df[col].unique().tolist())
+                                filters[col] = st.selectbox(f'Filter by {col}', options)
                     
                     with col2:
                         # Apply filters
                         filtered_df = df.copy()
                         
-                        for col, value in selected_filters.items():
+                        # Apply column filters
+                        for col, value in filters.items():
                             if value != 'All':
                                 filtered_df = filtered_df[filtered_df[col] == value]
                         
