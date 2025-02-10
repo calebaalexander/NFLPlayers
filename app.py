@@ -2,80 +2,129 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date
-import time
 
 # RapidAPI Configuration
 RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
 RAPIDAPI_HOST = "nfl-football-api.p.rapidapi.com"
+API_URL = "https://nfl-football-api.p.rapidapi.com"
 
-def fetch_nfl_data():
-    """Fetch NFL data from RapidAPI with rate limiting and error handling"""
-    base_url = "https://nfl-football-api.p.rapidapi.com"
-    endpoints = [
-        "/nfl-leagueinfo",
-        "/api/v1/teams",
-        "/teams",
-        "/v1/teams"
-    ]
-    
+def get_nfl_data():
+    """Fetch NFL data from the API"""
     headers = {
-        "X-RapidAPI-Host": RAPIDAPI_HOST,
-        "X-RapidAPI-Key": RAPIDAPI_KEY
+        "x-rapidapi-host": RAPIDAPI_HOST,
+        "x-rapidapi-key": RAPIDAPI_KEY
     }
     
-    max_retries = 3
-    retry_delay = 2  # seconds
-    
-    for endpoint in endpoints:
-        url = f"{base_url}{endpoint}"
-        st.sidebar.markdown(f"Trying endpoint: {endpoint}")
-        
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(url, headers=headers)
-                
-                if response.status_code == 200:
-                    return response.json()
-                elif response.status_code == 429:  # Rate limit exceeded
-                    if attempt < max_retries - 1:
-                        st.warning(f"Rate limit exceeded. Waiting {retry_delay} seconds...")
-                        time.sleep(retry_delay)
-                        continue
-                    else:
-                        st.error("Rate limit exceeded. Please try again later.")
-                elif response.status_code == 403:
-                    st.error("Access forbidden. Please check the API subscription status.")
-                    return None
-                else:
-                    st.error(f"Error {response.status_code}: {response.text}")
-                
-            except requests.exceptions.RequestException as e:
-                st.error(f"Request error: {str(e)}")
-                if attempt < max_retries - 1:
-                    continue
-                return None
-            
-    return None
+    try:
+        response = requests.get(f"{API_URL}/nfl-leagueinfo", headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching data: {str(e)}")
+        return None
 
-[Rest of the code remains exactly the same as before, just change the main() function to remove the API key input]
+def get_zodiac_sign(birth_date):
+    """Calculate zodiac sign from birth date"""
+    try:
+        if isinstance(birth_date, str):
+            birth_date = pd.to_datetime(birth_date)
+        
+        month = birth_date.month
+        day = birth_date.day
+        
+        zodiac_dates = [
+            (120, 'Capricorn'),   # Dec 22 - Jan 19
+            (219, 'Aquarius'),    # Jan 20 - Feb 18
+            (320, 'Pisces'),      # Feb 19 - Mar 20
+            (420, 'Aries'),       # Mar 21 - Apr 19
+            (521, 'Taurus'),      # Apr 20 - May 20
+            (621, 'Gemini'),      # May 21 - Jun 20
+            (723, 'Cancer'),      # Jun 21 - Jul 22
+            (823, 'Leo'),         # Jul 23 - Aug 22
+            (923, 'Virgo'),       # Aug 23 - Sep 22
+            (1023, 'Libra'),      # Sep 23 - Oct 22
+            (1122, 'Scorpio'),    # Oct 23 - Nov 21
+            (1222, 'Sagittarius'),# Nov 22 - Dec 21
+            (1232, 'Capricorn')   # Dec 22 - Dec 31
+        ]
+        
+        date_num = month * 100 + day
+        
+        for cutoff, sign in zodiac_dates:
+            if date_num <= cutoff:
+                return sign
+        return 'Capricorn'
+    except:
+        return None
+
+def get_compatible_signs(zodiac):
+    """Return most compatible zodiac signs"""
+    compatibility = {
+        'Aries': ['Leo', 'Sagittarius', 'Gemini'],
+        'Taurus': ['Virgo', 'Capricorn', 'Cancer'],
+        'Gemini': ['Libra', 'Aquarius', 'Aries'],
+        'Cancer': ['Scorpio', 'Pisces', 'Taurus'],
+        'Leo': ['Aries', 'Sagittarius', 'Gemini'],
+        'Virgo': ['Taurus', 'Capricorn', 'Cancer'],
+        'Libra': ['Gemini', 'Aquarius', 'Leo'],
+        'Scorpio': ['Cancer', 'Pisces', 'Virgo'],
+        'Sagittarius': ['Aries', 'Leo', 'Libra'],
+        'Capricorn': ['Taurus', 'Virgo', 'Pisces'],
+        'Aquarius': ['Gemini', 'Libra', 'Sagittarius'],
+        'Pisces': ['Cancer', 'Scorpio', 'Capricorn']
+    }
+    return compatibility.get(zodiac, [])
+
+def process_data(data):
+    """Process NFL data into DataFrame"""
+    if not data:
+        return pd.DataFrame()
+    
+    try:
+        df = pd.DataFrame(data)
+        
+        # Rename columns for display
+        column_mapping = {
+            'team_name': 'Team',
+            'team_city': 'City',
+            'team_conference': 'Conference',
+            'team_division': 'Division'
+        }
+        df = df.rename(columns=column_mapping)
+        
+        # Fill missing values
+        df = df.fillna('Unknown')
+        
+        return df
+    except Exception as e:
+        st.error(f"Error processing data: {str(e)}")
+        return pd.DataFrame()
+
+def highlight_conference(val):
+    """Return CSS style for conference highlighting"""
+    if val == 'AFC':
+        return 'background-color: #ffcdd2'
+    elif val == 'NFC':
+        return 'background-color: #c8e6c9'
+    return ''
 
 def main():
     st.set_page_config(page_title="NFL Teams Explorer", page_icon="🏈", layout="wide")
     st.title("🏈 NFL Teams Explorer")
     
-    # Create tabs for different views
+    # Create tabs
     tab1, tab2 = st.tabs(["Teams", "Zodiac Calculator"])
     
     with tab1:
-        # Fetch and display team data
+        # Fetch NFL data
         with st.spinner("Loading NFL data..."):
-            data = fetch_nfl_data()
+            data = get_nfl_data()
             
             if data:
-                df = process_nfl_data(data)
+                df = process_data(data)
                 
                 if not df.empty:
-                    # Create columns for layout
+                    # Create layout
                     col1, col2 = st.columns([1, 3])
                     
                     with col1:
@@ -111,17 +160,14 @@ def main():
                             )
                             filtered_df = filtered_df[mask]
                         
-                        # Style the dataframe
-                        styled_df = filtered_df.style.applymap(
-                            lambda x: highlight_conference(x, selected_conference),
-                            subset=['Conference']
-                        )
+                        # Style dataframe
+                        styled_df = filtered_df.style.applymap(highlight_conference, subset=['Conference'])
                         
                         # Display results
                         st.write(f"Showing {len(filtered_df)} teams")
                         st.dataframe(styled_df, hide_index=True)
                         
-                        # Export functionality
+                        # Export option
                         if st.button("Export to CSV"):
                             csv = filtered_df.to_csv(index=False)
                             st.download_button(
@@ -132,9 +178,9 @@ def main():
                             )
     
     with tab2:
-        # Zodiac Calculator
         st.subheader("Zodiac Sign Calculator")
         
+        # Date input
         default_date = date(1988, 1, 1)
         birth_date = st.date_input(
             "Enter birth date",
