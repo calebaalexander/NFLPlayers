@@ -2,26 +2,50 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date
+import time
 
 # RapidAPI Configuration
 RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
 RAPIDAPI_HOST = "nfl-football-api.p.rapidapi.com"
-API_URL = "https://nfl-football-api.p.rapidapi.com"
+API_URL = "https://nfl-football-api.p.rapidapi.com/nfl-leagueinfo"
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_nfl_data():
-    """Fetch NFL data from the API"""
+    """Fetch NFL data from the API with rate limiting"""
     headers = {
         "x-rapidapi-host": RAPIDAPI_HOST,
         "x-rapidapi-key": RAPIDAPI_KEY
     }
     
-    try:
-        response = requests.get(f"{API_URL}/nfl-leagueinfo", headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching data: {str(e)}")
-        return None
+    max_retries = 3
+    base_delay = 2  # Base delay in seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Add delay between attempts
+            if attempt > 0:
+                delay = base_delay * (2 ** (attempt - 1))  # Exponential backoff
+                st.warning(f"Rate limit hit. Waiting {delay} seconds before retry...")
+                time.sleep(delay)
+            
+            response = requests.get(API_URL, headers=headers)
+            
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 429:  # Too Many Requests
+                if attempt < max_retries - 1:
+                    continue
+                st.error("Rate limit exceeded. Please try again in a few minutes.")
+            else:
+                st.error(f"Error {response.status_code}: {response.text}")
+            
+        except requests.exceptions.RequestException as e:
+            st.error(f"Request error: {str(e)}")
+            if attempt < max_retries - 1:
+                continue
+            break
+    
+    return None
 
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
@@ -81,16 +105,33 @@ def process_data(data):
         return pd.DataFrame()
     
     try:
-        df = pd.DataFrame(data)
+        if isinstance(data, list):
+            df = pd.DataFrame(data)
+        elif isinstance(data, dict):
+            if 'teams' in data:
+                df = pd.DataFrame(data['teams'])
+            else:
+                df = pd.DataFrame([data])
+        else:
+            st.error(f"Unexpected data type: {type(data)}")
+            return pd.DataFrame()
         
         # Rename columns for display
         column_mapping = {
             'team_name': 'Team',
             'team_city': 'City',
             'team_conference': 'Conference',
-            'team_division': 'Division'
+            'team_division': 'Division',
+            'name': 'Team',
+            'city': 'City',
+            'conference': 'Conference',
+            'division': 'Division'
         }
-        df = df.rename(columns=column_mapping)
+        
+        # Rename only the columns that exist
+        for old_col, new_col in column_mapping.items():
+            if old_col in df.columns:
+                df = df.rename(columns={old_col: new_col})
         
         # Fill missing values
         df = df.fillna('Unknown')
