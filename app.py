@@ -2,86 +2,63 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date
-import time
 
-# RapidAPI Configuration
-RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
-RAPIDAPI_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
+# SportsData.io API Configuration
+API_KEY = "6df769b0923f4826a1fbb8080e55cdf4"
+API_URL = "https://api.sportsdata.io/v3/nfl/scores/json/PlayersByAvailable"
 
-# Cache data to avoid rate limits
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+@st.cache_data(ttl=900)  # Cache for 15 minutes (matching API interval)
 def get_nfl_data():
-    """Fetch NFL data from Tank01 API with rate limiting"""
-    base_url = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
-    
-    # Headers
-    headers = {
-        "x-rapidapi-host": RAPIDAPI_HOST,
-        "x-rapidapi-key": RAPIDAPI_KEY
+    """Fetch NFL player data from SportsData.io API"""
+    params = {
+        'key': API_KEY
     }
     
-    # Add delay between requests
-    delay = 1  # seconds
-    max_retries = 3
-    
-    endpoints = [
-        "/getTeamListing",  # Try different team endpoint
-        "/getNFLTeamInfo",  # Another team endpoint
-        "/getNFLTeams"      # Original endpoint
-    ]
-    
-    for endpoint in endpoints:
-        url = f"{base_url}{endpoint}"
-        st.sidebar.write(f"Trying endpoint: {endpoint}")
+    try:
+        response = requests.get(API_URL, params=params)
         
-        for attempt in range(max_retries):
-            try:
-                time.sleep(delay)  # Rate limiting delay
-                response = requests.get(url, headers=headers)
-                
-                if response.status_code == 200:
-                    return response.json()
-                elif response.status_code == 429:  # Too Many Requests
-                    if attempt < max_retries - 1:
-                        wait_time = (attempt + 1) * 2  # Exponential backoff
-                        st.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        st.error("Rate limit exceeded. Please try again later.")
-                elif response.status_code == 403:
-                    st.error("Unauthorized access. Please check your API subscription.")
-                    break  # Don't retry on auth errors
-                else:
-                    st.error(f"Error {response.status_code}: {response.text}")
-                    
-            except requests.exceptions.RequestException as e:
-                st.error(f"Request failed: {str(e)}")
-                if attempt < max_retries - 1:
-                    continue
-                break
-    
-    return None
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Error {response.status_code}: {response.text}")
+        return None
+            
+    except requests.exceptions.RequestException as e:
+        st.error(f"Request error: {str(e)}")
+        return None
 
 def process_data(data):
-    """Process NFL data into DataFrame"""
+    """Process NFL player data into DataFrame"""
     if not data:
         return pd.DataFrame()
     
     try:
-        if isinstance(data, dict):
-            if 'body' in data:
-                data = data['body']
-            elif 'teams' in data:
-                data = data['teams']
+        df = pd.DataFrame(data)
         
-        if isinstance(data, list):
-            df = pd.DataFrame(data)
-        elif isinstance(data, dict):
-            df = pd.DataFrame([data])
-        else:
-            st.error(f"Unexpected data type: {type(data)}")
-            return pd.DataFrame()
+        # Rename columns for better display
+        column_mapping = {
+            'TeamID': 'Team ID',
+            'Team': 'Team',
+            'Number': 'Jersey Number',
+            'FirstName': 'First Name',
+            'LastName': 'Last Name',
+            'Position': 'Position',
+            'Status': 'Status',
+            'Height': 'Height',
+            'Weight': 'Weight',
+            'BirthDate': 'Birth Date',
+            'College': 'College',
+            'Experience': 'Experience'
+        }
+        
+        # Rename only the columns that exist
+        for old_col, new_col in column_mapping.items():
+            if old_col in df.columns:
+                df = df.rename(columns={old_col: new_col})
+        
+        # Convert birth dates to datetime
+        if 'Birth Date' in df.columns:
+            df['Birth Date'] = pd.to_datetime(df['Birth Date']).dt.date
         
         # Fill missing values
         df = df.fillna('Unknown')
@@ -148,7 +125,7 @@ def main():
     st.title("🏈 NFL Teams Explorer")
     
     # Create tabs
-    tab1, tab2 = st.tabs(["NFL Data", "Zodiac Calculator"])
+    tab1, tab2 = st.tabs(["NFL Players", "Zodiac Calculator"])
     
     with tab1:
         # Add refresh button
@@ -157,7 +134,7 @@ def main():
             st.experimental_rerun()
             
         # Fetch NFL data
-        with st.spinner("Loading NFL data..."):
+        with st.spinner("Loading NFL player data..."):
             data = get_nfl_data()
             
             if data:
@@ -171,12 +148,14 @@ def main():
                         st.subheader("Filters")
                         
                         # Search box
-                        search = st.text_input("Search teams")
+                        search = st.text_input("Search players", placeholder="Search by name, team, college...")
                         
-                        # Dynamic filters based on data
+                        # Dynamic filters
+                        filter_columns = ['Team', 'Position', 'Status', 'College']
                         filters = {}
-                        for col in df.columns:
-                            if df[col].nunique() < 30:  # Only add filter for columns with reasonable unique values
+                        
+                        for col in filter_columns:
+                            if col in df.columns:
                                 values = ['All'] + sorted(df[col].unique().tolist())
                                 filters[col] = st.selectbox(f'Filter by {col}', values)
                     
@@ -197,7 +176,7 @@ def main():
                             filtered_df = filtered_df[mask]
                         
                         # Display results
-                        st.write(f"Showing {len(filtered_df)} teams")
+                        st.write(f"Showing {len(filtered_df)} players")
                         st.dataframe(filtered_df)
                         
                         # Export functionality
@@ -206,7 +185,7 @@ def main():
                             st.download_button(
                                 label="Download CSV",
                                 data=csv,
-                                file_name=f"nfl_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                                file_name=f"nfl_players_{datetime.now().strftime('%Y%m%d')}.csv",
                                 mime="text/csv"
                             )
     
