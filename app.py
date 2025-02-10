@@ -4,25 +4,29 @@ import requests
 from datetime import datetime, date
 
 # RapidAPI Configuration
-RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
+RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"  # Your RapidAPI key
 RAPIDAPI_HOST = "nfl-api-data.p.rapidapi.com"
 API_URL = "https://nfl-api-data.p.rapidapi.com/nfl-team-listing/v1/data"
 
-# Cache data to avoid multiple API calls
-@st.cache_data(ttl=3600)  # Cache for 1 hour
 def fetch_nfl_data():
     """Fetch NFL team data from RapidAPI"""
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST
+        "X-RapidAPI-Host": RAPIDAPI_HOST,
+        "X-RapidAPI-Key": RAPIDAPI_KEY
     }
     
     try:
-        response = requests.get(API_URL, headers=headers)
+        response = requests.get(API_URL, headers=headers, timeout=30)
+        # Print response for debugging
+        print(f"Response Status: {response.status_code}")
+        print(f"Response Headers: {dict(response.headers)}")
+        
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching data: {str(e)}")
+        print(f"Error details: {str(e)}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response content: {e.response.content}")
         return None
 
 def get_zodiac_sign(birth_date):
@@ -77,22 +81,11 @@ def get_compatible_signs(zodiac):
     }
     return compatibility.get(zodiac, [])
 
-def calculate_age(birth_date):
-    """Calculate age from birth date, handling invalid dates"""
-    try:
-        birth_date = pd.to_datetime(birth_date)
-        today = pd.Timestamp.now()
-        age = (today - birth_date).days / 365.25
-        return int(age) if pd.notnull(age) else None
-    except:
-        return None
-
 def process_nfl_data(data):
     """Process NFL data into a pandas DataFrame"""
-    if not data or not isinstance(data, list):
+    if not data:
         return pd.DataFrame()
-    
-    # Create DataFrame from the API response
+        
     df = pd.DataFrame(data)
     
     # Rename columns to match our display format
@@ -100,8 +93,7 @@ def process_nfl_data(data):
         'team_name': 'Team',
         'team_city': 'City',
         'team_conference': 'Conference',
-        'team_division': 'Division',
-        'team_logo_url': 'Logo URL'
+        'team_division': 'Division'
     }
     
     df = df.rename(columns=column_mapping)
@@ -113,10 +105,6 @@ def process_nfl_data(data):
     df['City'] = df['City'].fillna('Unknown')
     
     return df
-
-def highlight_compatible_signs(val, compatible_signs):
-    """Return CSS style if zodiac sign is compatible"""
-    return 'background-color: yellow' if val in compatible_signs else ''
 
 def highlight_conference(val, conference):
     """Return CSS style for conference"""
@@ -139,13 +127,27 @@ def main():
     tab1, tab2 = st.tabs(["Teams", "Zodiac Calculator"])
     
     with tab1:
+        # Add API Key input in sidebar
+        with st.sidebar:
+            api_key = st.text_input("Enter your RapidAPI Key", type="password")
+            if api_key:
+                # Update the API key if provided
+                global RAPIDAPI_KEY
+                RAPIDAPI_KEY = api_key
+        
         # Fetch data from RapidAPI
         with st.spinner("Loading NFL team data..."):
             data = fetch_nfl_data()
-        
-        if not data:
-            st.error("Failed to fetch data from the API")
-            return
+            
+            if not data:
+                st.error("""
+                Failed to fetch data from the API. Please check:
+                1. Your RapidAPI key is correct
+                2. You have an active subscription to this API
+                3. The API endpoint is available
+                """)
+                st.info("You can get a new API key from RapidAPI's website")
+                return
         
         # Process data
         df = process_nfl_data(data)
@@ -200,10 +202,7 @@ def main():
             st.write(f"Showing {len(filtered_df)} teams")
             st.dataframe(
                 styled_df,
-                hide_index=True,
-                column_config={
-                    "Logo URL": st.column_config.ImageColumn("Team Logo")
-                }
+                hide_index=True
             )
             
             # Export functionality
