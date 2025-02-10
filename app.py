@@ -3,9 +3,27 @@ import pandas as pd
 import requests
 from datetime import datetime, date
 
-# Configuration
-API_KEY = "6df769b0923f4826a1fbb8080e55cdf4"
-API_URL = "https://api.sportsdata.io/v3/nfl/scores/json/PlayersByAvailable"
+# RapidAPI Configuration
+RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
+RAPIDAPI_HOST = "nfl-api-data.p.rapidapi.com"
+API_URL = "https://nfl-api-data.p.rapidapi.com/nfl-team-listing/v1/data"
+
+# Cache data to avoid multiple API calls
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def fetch_nfl_data():
+    """Fetch NFL team data from RapidAPI"""
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST
+    }
+    
+    try:
+        response = requests.get(API_URL, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching data: {str(e)}")
+        return None
 
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
@@ -59,16 +77,6 @@ def get_compatible_signs(zodiac):
     }
     return compatibility.get(zodiac, [])
 
-def fetch_nfl_data():
-    """Fetch NFL player data from the API"""
-    params = {'key': API_KEY}
-    response = requests.get(API_URL, params=params)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        st.error(f"Error fetching data: {response.status_code}")
-        return None
-
 def calculate_age(birth_date):
     """Calculate age from birth date, handling invalid dates"""
     try:
@@ -79,192 +87,181 @@ def calculate_age(birth_date):
     except:
         return None
 
-def process_player_data(data):
-    """Convert API data to pandas DataFrame with selected columns"""
+def process_nfl_data(data):
+    """Process NFL data into a pandas DataFrame"""
+    if not data or not isinstance(data, list):
+        return pd.DataFrame()
+    
+    # Create DataFrame from the API response
     df = pd.DataFrame(data)
     
-    # Select and rename columns
-    columns = {
-        'Team': 'Team',
-        'Position': 'Position',
-        'Number': 'Number',
-        'FirstName': 'First Name',
-        'LastName': 'Last Name',
-        'Height': 'Height',
-        'Weight': 'Weight',
-        'BirthDate': 'Birth Date',
-        'College': 'College'
+    # Rename columns to match our display format
+    column_mapping = {
+        'team_name': 'Team',
+        'team_city': 'City',
+        'team_conference': 'Conference',
+        'team_division': 'Division',
+        'team_logo_url': 'Logo URL'
     }
     
-    # Create new dataframe with selected columns
-    result_df = pd.DataFrame()
-    for api_col, display_col in columns.items():
-        if api_col in df.columns:
-            result_df[display_col] = df[api_col]
-        else:
-            result_df[display_col] = None
-    
-    # Format birth date and calculate age
-    if 'Birth Date' in result_df.columns:
-        result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
-        result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
-        # Add zodiac sign right after birth date
-        result_df['Zodiac'] = result_df['Birth Date'].apply(get_zodiac_sign)
-        # Format birth date for display
-        result_df['Birth Date'] = result_df['Birth Date'].dt.strftime('%Y-%m-%d')
+    df = df.rename(columns=column_mapping)
     
     # Fill any NA values
-    result_df['Team'] = result_df['Team'].fillna('Free Agent')
-    result_df['Position'] = result_df['Position'].fillna('Unknown')
+    df['Team'] = df['Team'].fillna('Unknown')
+    df['Conference'] = df['Conference'].fillna('Unknown')
+    df['Division'] = df['Division'].fillna('Unknown')
+    df['City'] = df['City'].fillna('Unknown')
     
-    # Reorder columns to ensure Zodiac comes right after Birth Date
-    cols = result_df.columns.tolist()
-    birth_date_idx = cols.index('Birth Date')
-    cols.remove('Zodiac')
-    cols.insert(birth_date_idx + 1, 'Zodiac')
-    result_df = result_df[cols]
-    
-    return result_df
+    return df
 
 def highlight_compatible_signs(val, compatible_signs):
     """Return CSS style if zodiac sign is compatible"""
     return 'background-color: yellow' if val in compatible_signs else ''
 
-def highlight_repeating_numbers(val):
-    """Return CSS style if number is repeating"""
-    if pd.isna(val) or not isinstance(val, (int, float)):
-        return ''
-    num_str = str(int(val))
-    return 'background-color: green' if len(num_str) > 1 and len(set(num_str)) == 1 else ''
+def highlight_conference(val, conference):
+    """Return CSS style for conference"""
+    colors = {
+        'AFC': 'background-color: #ffcdd2',
+        'NFC': 'background-color: #c8e6c9'
+    }
+    return colors.get(val, '')
 
 def main():
-    st.title("NFL Players Roster: Zodiac Edition")
-
-    # Create sidebar for filters
-    st.sidebar.header("Zodiac Calculator")
-    
-    # Add date input for zodiac calculation
-    default_date = date(1988, 1, 1)
-    user_date = st.sidebar.date_input(
-        "Enter your birth date (MM/DD/YYYY)",
-        value=default_date,
-        format="MM/DD/YYYY"
+    st.set_page_config(
+        page_title="NFL Teams Explorer",
+        page_icon="🏈",
+        layout="wide"
     )
+
+    st.title("🏈 NFL Teams Explorer")
     
-    # Calculate and display user's zodiac sign
-    user_zodiac = get_zodiac_sign(user_date)
-    st.sidebar.write(f"Your Zodiac Sign: **{user_zodiac}**")
+    # Create tabs for different views
+    tab1, tab2 = st.tabs(["Teams", "Zodiac Calculator"])
     
-    # Display compatible signs
-    compatible_signs = get_compatible_signs(user_zodiac)
-    st.sidebar.write("Most Compatible Signs:")
-    for sign in compatible_signs:
-        st.sidebar.write(f"- {sign}")
+    with tab1:
+        # Fetch data from RapidAPI
+        with st.spinner("Loading NFL team data..."):
+            data = fetch_nfl_data()
         
-    # Add toggle for compatibility filter
-    show_compatible = st.sidebar.checkbox("Show only compatible players", value=False)
-
-    st.sidebar.divider()
-    st.sidebar.header("Filters")
-
-    # Fetch data
-    with st.spinner("Loading players..."):
-        data = fetch_nfl_data()
-    
-    if not data:
-        st.error("Failed to fetch data from the API")
-        st.stop()
-
-    # Process data
-    df = process_player_data(data)
-    
-    # Get unique teams and positions
-    unique_teams = df['Team'].unique()
-    unique_positions = df['Position'].unique()
-    valid_teams = sorted([team for team in unique_teams if team])
-    valid_positions = sorted([pos for pos in unique_positions if pos])
-    
-    # Team filter in sidebar
-    selected_team = st.sidebar.selectbox(
-        "Select Team",
-        ["All Teams"] + valid_teams
-    )
-    
-    # Position filter in sidebar
-    selected_position = st.sidebar.selectbox(
-        "Select Position",
-        ["All Positions"] + valid_positions
-    )
-
-    # Filter based on selections
-    filtered_df = df.copy()
-
-    # Apply zodiac compatibility filter
-    if show_compatible:
-        filtered_df = filtered_df[filtered_df['Zodiac'].isin(compatible_signs)]
-
-    # Apply team filter
-    if selected_team != "All Teams":
-        filtered_df = filtered_df[filtered_df['Team'] == selected_team]
-    
-    # Apply position filter
-    if selected_position != "All Positions":
-        filtered_df = filtered_df[filtered_df['Position'] == selected_position]
-
-    # Add search functionality
-    search = st.text_input("Search players", "")
-    
-    # Apply search filter
-    if search:
-        search_lower = search.lower()
-        mask = (
-            filtered_df['First Name'].str.lower().str.contains(search_lower, na=False) |
-            filtered_df['Last Name'].str.lower().str.contains(search_lower, na=False) |
-            filtered_df['Team'].str.lower().str.contains(search_lower, na=False) |
-            filtered_df['College'].str.lower().str.contains(search_lower, na=False)
-        )
-        filtered_df = filtered_df[mask]
-
-    # Display metrics
-    if show_compatible:
-        st.write(f"Showing {len(filtered_df)} compatible players")
-    else:
-        st.write(f"Showing {len(filtered_df)} players")
-
-    # Apply styling
-    styled_df = filtered_df.style\
-        .applymap(lambda x: highlight_compatible_signs(x, compatible_signs), subset=['Zodiac'])\
-        .applymap(highlight_repeating_numbers, subset=['Number'])
-
-    # Display the styled dataframe
-    st.dataframe(
-        styled_df,
-        hide_index=True,
-        column_config={
-            "Number": st.column_config.NumberColumn(
-                "Number",
-                format="%d"
-            ),
-            "Weight": st.column_config.NumberColumn(
-                "Weight",
-                format="%d lbs"
-            ),
-            "Age": st.column_config.NumberColumn(
-                "Age",
-                format="%d"
+        if not data:
+            st.error("Failed to fetch data from the API")
+            return
+        
+        # Process data
+        df = process_nfl_data(data)
+        
+        if df.empty:
+            st.error("No data available to display")
+            return
+        
+        # Create columns for layout
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            st.subheader("Filters")
+            
+            # Conference filter
+            conferences = ['All Conferences'] + sorted(df['Conference'].unique().tolist())
+            selected_conference = st.selectbox('Conference', conferences)
+            
+            # Division filter
+            divisions = ['All Divisions'] + sorted(df['Division'].unique().tolist())
+            selected_division = st.selectbox('Division', divisions)
+            
+            # Search box
+            search = st.text_input("Search teams")
+        
+        with col2:
+            # Apply filters
+            filtered_df = df.copy()
+            
+            if selected_conference != 'All Conferences':
+                filtered_df = filtered_df[filtered_df['Conference'] == selected_conference]
+            
+            if selected_division != 'All Divisions':
+                filtered_df = filtered_df[filtered_df['Division'] == selected_division]
+            
+            # Apply search
+            if search:
+                search_lower = search.lower()
+                mask = (
+                    filtered_df['Team'].str.lower().str.contains(search_lower, na=False) |
+                    filtered_df['City'].str.lower().str.contains(search_lower, na=False)
+                )
+                filtered_df = filtered_df[mask]
+            
+            # Style the dataframe
+            styled_df = filtered_df.style.applymap(
+                lambda x: highlight_conference(x, selected_conference),
+                subset=['Conference']
             )
-        }
-    )
-
-    # Export functionality
-    if st.button("Export to CSV"):
-        csv = filtered_df.to_csv(index=False)
-        st.download_button(
-            label="Download CSV",
-            data=csv,
-            file_name=f"nfl_players_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
+            
+            # Display results
+            st.write(f"Showing {len(filtered_df)} teams")
+            st.dataframe(
+                styled_df,
+                hide_index=True,
+                column_config={
+                    "Logo URL": st.column_config.ImageColumn("Team Logo")
+                }
+            )
+            
+            # Export functionality
+            if st.button("Export to CSV"):
+                csv = filtered_df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name=f"nfl_teams_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+    
+    with tab2:
+        st.subheader("Zodiac Sign Calculator")
+        
+        # Add date input for zodiac calculation
+        default_date = date(1988, 1, 1)
+        user_date = st.date_input(
+            "Enter your birth date",
+            value=default_date,
+            format="MM/DD/YYYY"
         )
+        
+        # Calculate and display zodiac sign
+        user_zodiac = get_zodiac_sign(user_date)
+        
+        if user_zodiac:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"### Your Zodiac Sign: {user_zodiac}")
+                
+                # Display compatible signs
+                compatible_signs = get_compatible_signs(user_zodiac)
+                st.write("### Compatible Signs:")
+                for sign in compatible_signs:
+                    st.write(f"- {sign}")
+            
+            with col2:
+                # Display zodiac characteristics
+                characteristics = {
+                    'Aries': ['Leadership', 'Energy', 'Adventure'],
+                    'Taurus': ['Reliability', 'Patience', 'Determination'],
+                    'Gemini': ['Adaptability', 'Communication', 'Curiosity'],
+                    'Cancer': ['Intuition', 'Emotional Intelligence', 'Nurturing'],
+                    'Leo': ['Confidence', 'Creativity', 'Enthusiasm'],
+                    'Virgo': ['Analysis', 'Practicality', 'Attention to Detail'],
+                    'Libra': ['Diplomacy', 'Balance', 'Grace'],
+                    'Scorpio': ['Passion', 'Intuition', 'Power'],
+                    'Sagittarius': ['Optimism', 'Freedom', 'Adventure'],
+                    'Capricorn': ['Ambition', 'Discipline', 'Patience'],
+                    'Aquarius': ['Innovation', 'Independence', 'Originality'],
+                    'Pisces': ['Empathy', 'Creativity', 'Intuition']
+                }
+                
+                st.write("### Your Characteristics:")
+                for trait in characteristics.get(user_zodiac, []):
+                    st.write(f"- {trait}")
 
 if __name__ == "__main__":
     main()
