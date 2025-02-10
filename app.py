@@ -2,14 +2,25 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date
+import re
 
-# SportsData.io API Configuration
+# API Configuration
 API_KEY = "6df769b0923f4826a1fbb8080e55cdf4"
 API_URL = "https://api.sportsdata.io/v3/nfl/scores/json/PlayersByAvailable"
 
-@st.cache_data(ttl=900)  # Cache for 15 minutes (matching API interval)
+def parse_quota_message(message):
+    """Extract time remaining from quota message"""
+    try:
+        match = re.search(r"(\d{2}):(\d{2}):(\d{2}):(\d{2})", message)
+        if match:
+            days, hours, minutes, seconds = map(int, match.groups())
+            return f"{days}d {hours}h {minutes}m {seconds}s"
+    except:
+        pass
+    return "unknown time"
+
 def get_nfl_data():
-    """Fetch NFL player data from SportsData.io API"""
+    """Fetch NFL player data"""
     params = {
         'key': API_KEY
     }
@@ -19,16 +30,27 @@ def get_nfl_data():
         
         if response.status_code == 200:
             return response.json()
+        elif response.status_code == 403:
+            error_data = response.json()
+            if "message" in error_data:
+                if "Quota" in error_data["message"]:
+                    time_remaining = parse_quota_message(error_data["message"])
+                    st.error(f"API quota exceeded. Quota will reset in: {time_remaining}")
+                else:
+                    st.error(error_data["message"])
+            else:
+                st.error("Access denied. Please check your API key.")
         else:
             st.error(f"Error {response.status_code}: {response.text}")
+        
         return None
             
     except requests.exceptions.RequestException as e:
-        st.error(f"Request error: {str(e)}")
+        st.error(f"Request failed: {str(e)}")
         return None
 
-def process_data(data):
-    """Process NFL player data into DataFrame"""
+def process_nfl_data(data):
+    """Process NFL data into DataFrame"""
     if not data:
         return pd.DataFrame()
     
@@ -48,22 +70,31 @@ def process_data(data):
             'Weight': 'Weight',
             'BirthDate': 'Birth Date',
             'College': 'College',
-            'Experience': 'Experience'
+            'Experience': 'Experience',
+            'PhotoUrl': 'Photo URL'
         }
         
-        # Rename only the columns that exist
+        # Rename only existing columns
         for old_col, new_col in column_mapping.items():
             if old_col in df.columns:
                 df = df.rename(columns={old_col: new_col})
         
-        # Convert birth dates to datetime
+        # Convert birth dates
         if 'Birth Date' in df.columns:
             df['Birth Date'] = pd.to_datetime(df['Birth Date']).dt.date
+            df['Age'] = (pd.Timestamp.now().date() - df['Birth Date']).astype('<m8[Y]')
+        
+        # Format height and weight
+        if 'Height' in df.columns:
+            df['Height'] = df['Height'].apply(lambda x: f"{x // 12}'{x % 12}\"" if pd.notnull(x) else 'Unknown')
+        if 'Weight' in df.columns:
+            df['Weight'] = df['Weight'].apply(lambda x: f"{int(x)} lbs" if pd.notnull(x) else 'Unknown')
         
         # Fill missing values
         df = df.fillna('Unknown')
         
         return df
+        
     except Exception as e:
         st.error(f"Error processing data: {str(e)}")
         return pd.DataFrame()
@@ -138,7 +169,7 @@ def main():
             data = get_nfl_data()
             
             if data:
-                df = process_data(data)
+                df = process_nfl_data(data)
                 
                 if not df.empty:
                     # Create layout
@@ -148,7 +179,7 @@ def main():
                         st.subheader("Filters")
                         
                         # Search box
-                        search = st.text_input("Search players", placeholder="Search by name, team, college...")
+                        search = st.text_input("Search players", placeholder="Name, team, or college...")
                         
                         # Dynamic filters
                         filter_columns = ['Team', 'Position', 'Status', 'College']
