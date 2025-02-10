@@ -2,44 +2,94 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date
+import time
 
 # RapidAPI Configuration
 RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
 RAPIDAPI_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
-API_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
 
+# Cache data to avoid rate limits
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_nfl_data():
-    """Fetch NFL data from Tank01 API"""
-    endpoints = [
-        "/getNFLTeams",  # Try getting teams list first
-        "/getNFLPlayers",  # Then try players
-        "/getNFLDFS"  # Finally try DFS data
-    ]
+    """Fetch NFL data from Tank01 API with rate limiting"""
+    base_url = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
     
+    # Headers
     headers = {
         "x-rapidapi-host": RAPIDAPI_HOST,
         "x-rapidapi-key": RAPIDAPI_KEY
     }
     
-    st.sidebar.write("Testing API endpoints...")
+    # Add delay between requests
+    delay = 1  # seconds
+    max_retries = 3
+    
+    endpoints = [
+        "/getTeamListing",  # Try different team endpoint
+        "/getNFLTeamInfo",  # Another team endpoint
+        "/getNFLTeams"      # Original endpoint
+    ]
     
     for endpoint in endpoints:
-        url = f"{API_URL}{endpoint}"
+        url = f"{base_url}{endpoint}"
         st.sidebar.write(f"Trying endpoint: {endpoint}")
-        try:
-            response = requests.get(url, headers=headers)
-            st.sidebar.write(f"Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                return response.json()
-            elif response.status_code == 403:
-                st.sidebar.write("Unauthorized access")
-            else:
-                st.sidebar.write(f"Error: {response.text}")
-        except Exception as e:
-            st.sidebar.write(f"Error with {endpoint}: {str(e)}")
+        
+        for attempt in range(max_retries):
+            try:
+                time.sleep(delay)  # Rate limiting delay
+                response = requests.get(url, headers=headers)
+                
+                if response.status_code == 200:
+                    return response.json()
+                elif response.status_code == 429:  # Too Many Requests
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 2  # Exponential backoff
+                        st.warning(f"Rate limit hit. Waiting {wait_time} seconds...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        st.error("Rate limit exceeded. Please try again later.")
+                elif response.status_code == 403:
+                    st.error("Unauthorized access. Please check your API subscription.")
+                    break  # Don't retry on auth errors
+                else:
+                    st.error(f"Error {response.status_code}: {response.text}")
+                    
+            except requests.exceptions.RequestException as e:
+                st.error(f"Request failed: {str(e)}")
+                if attempt < max_retries - 1:
+                    continue
+                break
     
     return None
+
+def process_data(data):
+    """Process NFL data into DataFrame"""
+    if not data:
+        return pd.DataFrame()
+    
+    try:
+        if isinstance(data, dict):
+            if 'body' in data:
+                data = data['body']
+            elif 'teams' in data:
+                data = data['teams']
+        
+        if isinstance(data, list):
+            df = pd.DataFrame(data)
+        elif isinstance(data, dict):
+            df = pd.DataFrame([data])
+        else:
+            st.error(f"Unexpected data type: {type(data)}")
+            return pd.DataFrame()
+        
+        # Fill missing values
+        df = df.fillna('Unknown')
+        
+        return df
+    except Exception as e:
+        st.error(f"Error processing data: {str(e)}")
+        return pd.DataFrame()
 
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
@@ -93,61 +143,19 @@ def get_compatible_signs(zodiac):
     }
     return compatibility.get(zodiac, [])
 
-def process_data(data):
-    """Process NFL data into DataFrame"""
-    if not data:
-        return pd.DataFrame()
-    
-    try:
-        # Print raw data structure for debugging
-        st.sidebar.write("Raw data type:", type(data))
-        
-        if isinstance(data, dict):
-            # Check for known data structures
-            if 'body' in data:
-                data = data['body']
-            elif 'teams' in data:
-                data = data['teams']
-            elif 'players' in data:
-                data = data['players']
-        
-        if isinstance(data, list):
-            df = pd.DataFrame(data)
-        elif isinstance(data, dict):
-            df = pd.DataFrame([data])
-        else:
-            st.error(f"Unexpected data type: {type(data)}")
-            return pd.DataFrame()
-        
-        # Show available columns
-        st.sidebar.write("Available columns:", df.columns.tolist())
-        
-        # Fill missing values
-        df = df.fillna('Unknown')
-        
-        return df
-    except Exception as e:
-        st.error(f"Error processing data: {str(e)}")
-        st.write("Raw data:", data)
-        return pd.DataFrame()
-
 def main():
     st.set_page_config(page_title="NFL Teams Explorer", page_icon="🏈", layout="wide")
     st.title("🏈 NFL Teams Explorer")
-    
-    # Add API details to sidebar
-    st.sidebar.title("API Configuration")
-    st.sidebar.markdown("""
-    **Current API Details:**
-    - Host: tank01-nfl-live-in-game-real-time-statistics-nfl
-    - Key: Configured
-    - Testing multiple endpoints...
-    """)
     
     # Create tabs
     tab1, tab2 = st.tabs(["NFL Data", "Zodiac Calculator"])
     
     with tab1:
+        # Add refresh button
+        if st.button("🔄 Refresh Data"):
+            st.cache_data.clear()
+            st.experimental_rerun()
+            
         # Fetch NFL data
         with st.spinner("Loading NFL data..."):
             data = get_nfl_data()
@@ -156,27 +164,26 @@ def main():
                 df = process_data(data)
                 
                 if not df.empty:
-                    st.write("### NFL Data")
-                    
-                    # Create filters if we have data
+                    # Create layout
                     col1, col2 = st.columns([1, 3])
                     
                     with col1:
                         st.subheader("Filters")
-                        search = st.text_input("Search")
+                        
+                        # Search box
+                        search = st.text_input("Search teams")
                         
                         # Dynamic filters based on data
                         filters = {}
                         for col in df.columns:
-                            if df[col].nunique() < 50:  # Only add filter for columns with reasonable number of unique values
-                                options = ['All'] + sorted(df[col].unique().tolist())
-                                filters[col] = st.selectbox(f'Filter by {col}', options)
+                            if df[col].nunique() < 30:  # Only add filter for columns with reasonable unique values
+                                values = ['All'] + sorted(df[col].unique().tolist())
+                                filters[col] = st.selectbox(f'Filter by {col}', values)
                     
                     with col2:
                         # Apply filters
                         filtered_df = df.copy()
                         
-                        # Apply column filters
                         for col, value in filters.items():
                             if value != 'All':
                                 filtered_df = filtered_df[filtered_df[col] == value]
@@ -190,7 +197,7 @@ def main():
                             filtered_df = filtered_df[mask]
                         
                         # Display results
-                        st.write(f"Showing {len(filtered_df)} records")
+                        st.write(f"Showing {len(filtered_df)} teams")
                         st.dataframe(filtered_df)
                         
                         # Export functionality
