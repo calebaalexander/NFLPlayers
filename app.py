@@ -6,53 +6,96 @@ from datetime import datetime, date
 # RapidAPI Configuration
 RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
 RAPIDAPI_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
-API_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
 
 def get_nfl_data():
     """Fetch NFL data from Tank01 API"""
-    url = f"{API_URL}/getNFLDFS?date=20250119"
+    url = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLDFS"
     
+    querystring = {"date": "20250119"}
     headers = {
-        "X-RapidAPI-Host": RAPIDAPI_HOST,
-        "X-RapidAPI-Key": RAPIDAPI_KEY
+        "x-rapidapi-host": RAPIDAPI_HOST,
+        "x-rapidapi-key": RAPIDAPI_KEY
     }
     
     try:
+        # Add debug information
         st.sidebar.write("Making API request...")
         st.sidebar.write("URL:", url)
+        st.sidebar.write("Query params:", querystring)
         st.sidebar.write("Headers:", {k: '***' if 'key' in k.lower() else v for k, v in headers.items()})
         
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, params=querystring)
         
         # Print response details for debugging
         st.sidebar.write(f"Response Status: {response.status_code}")
+        if response.status_code != 200:
+            st.sidebar.write("Response Content:", response.text)
         
         if response.status_code == 200:
             return response.json()
+        elif response.status_code == 403:
+            st.error("Error 403: Unauthorized. Please check your API subscription.")
+            st.sidebar.write("Full response:", response.text)
         else:
             st.error(f"Error {response.status_code}: {response.text}")
-            return None
+        
+        return None
             
     except requests.exceptions.RequestException as e:
         st.error(f"Request error: {str(e)}")
         return None
 
-def get_nfl_teams():
-    """Fetch NFL teams from Tank01 API"""
-    url = f"{API_URL}/getNFLTeams"
-    
-    headers = {
-        "X-RapidAPI-Host": RAPIDAPI_HOST,
-        "X-RapidAPI-Key": RAPIDAPI_KEY
-    }
-    
+def get_zodiac_sign(birth_date):
+    """Calculate zodiac sign from birth date"""
     try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            return response.json()
-        return None
+        if isinstance(birth_date, str):
+            birth_date = pd.to_datetime(birth_date)
+        
+        month = birth_date.month
+        day = birth_date.day
+        
+        zodiac_dates = [
+            (120, 'Capricorn'),   # Dec 22 - Jan 19
+            (219, 'Aquarius'),    # Jan 20 - Feb 18
+            (320, 'Pisces'),      # Feb 19 - Mar 20
+            (420, 'Aries'),       # Mar 21 - Apr 19
+            (521, 'Taurus'),      # Apr 20 - May 20
+            (621, 'Gemini'),      # May 21 - Jun 20
+            (723, 'Cancer'),      # Jun 21 - Jul 22
+            (823, 'Leo'),         # Jul 23 - Aug 22
+            (923, 'Virgo'),       # Aug 23 - Sep 22
+            (1023, 'Libra'),      # Sep 23 - Oct 22
+            (1122, 'Scorpio'),    # Oct 23 - Nov 21
+            (1222, 'Sagittarius'),# Nov 22 - Dec 21
+            (1232, 'Capricorn')   # Dec 22 - Dec 31
+        ]
+        
+        date_num = month * 100 + day
+        
+        for cutoff, sign in zodiac_dates:
+            if date_num <= cutoff:
+                return sign
+        return 'Capricorn'
     except:
         return None
+
+def get_compatible_signs(zodiac):
+    """Return most compatible zodiac signs"""
+    compatibility = {
+        'Aries': ['Leo', 'Sagittarius', 'Gemini'],
+        'Taurus': ['Virgo', 'Capricorn', 'Cancer'],
+        'Gemini': ['Libra', 'Aquarius', 'Aries'],
+        'Cancer': ['Scorpio', 'Pisces', 'Taurus'],
+        'Leo': ['Aries', 'Sagittarius', 'Gemini'],
+        'Virgo': ['Taurus', 'Capricorn', 'Cancer'],
+        'Libra': ['Gemini', 'Aquarius', 'Leo'],
+        'Scorpio': ['Cancer', 'Pisces', 'Virgo'],
+        'Sagittarius': ['Aries', 'Leo', 'Libra'],
+        'Capricorn': ['Taurus', 'Virgo', 'Pisces'],
+        'Aquarius': ['Gemini', 'Libra', 'Sagittarius'],
+        'Pisces': ['Cancer', 'Scorpio', 'Capricorn']
+    }
+    return compatibility.get(zodiac, [])
 
 def process_data(data):
     """Process NFL data into DataFrame"""
@@ -60,8 +103,10 @@ def process_data(data):
         return pd.DataFrame()
     
     try:
-        # Check the structure of the data
-        st.sidebar.write("Data structure:", type(data))
+        # Print raw data structure for debugging
+        st.sidebar.write("Raw data type:", type(data))
+        st.sidebar.write("Raw data keys:", data.keys() if isinstance(data, dict) else "No keys")
+        
         if isinstance(data, dict) and 'body' in data:
             data = data['body']
         
@@ -96,42 +141,105 @@ def main():
         # Fetch NFL data
         with st.spinner("Loading NFL data..."):
             data = get_nfl_data()
-            teams_data = get_nfl_teams()
             
-            if data or teams_data:
-                # Process main data
+            if data:
                 df = process_data(data)
-                teams_df = process_data(teams_data)
                 
-                # Display raw data for inspection
-                st.write("### Raw Data Structure")
-                if not df.empty:
-                    st.write("Main Data Columns:", df.columns.tolist())
-                if not teams_df.empty:
-                    st.write("Teams Data Columns:", teams_df.columns.tolist())
-                
-                # Display the data
                 if not df.empty:
                     st.write("### NFL Data")
-                    st.dataframe(df)
-                
-                if not teams_df.empty:
-                    st.write("### NFL Teams")
-                    st.dataframe(teams_df)
-                
-                # Export functionality
-                if st.button("Export to CSV"):
-                    csv = df.to_csv(index=False) if not df.empty else teams_df.to_csv(index=False)
-                    st.download_button(
-                        label="Download CSV",
-                        data=csv,
-                        file_name=f"nfl_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
+                    
+                    # Create filters if we have data
+                    col1, col2 = st.columns([1, 3])
+                    
+                    with col1:
+                        st.subheader("Filters")
+                        
+                        # Add filters based on available columns
+                        available_filters = []
+                        for col in df.columns:
+                            if df[col].nunique() < 50:  # Only add filter for columns with reasonable number of unique values
+                                available_filters.append(col)
+                        
+                        selected_filters = {}
+                        for filter_col in available_filters:
+                            values = ['All'] + sorted(df[filter_col].unique().tolist())
+                            selected_filters[filter_col] = st.selectbox(f'Filter by {filter_col}', values)
+                        
+                        # Search box
+                        search = st.text_input("Search")
+                    
+                    with col2:
+                        # Apply filters
+                        filtered_df = df.copy()
+                        
+                        for col, value in selected_filters.items():
+                            if value != 'All':
+                                filtered_df = filtered_df[filtered_df[col] == value]
+                        
+                        # Apply search
+                        if search:
+                            search_lower = search.lower()
+                            mask = filtered_df.astype(str).apply(
+                                lambda x: x.str.lower().str.contains(search_lower, na=False)
+                            ).any(axis=1)
+                            filtered_df = filtered_df[mask]
+                        
+                        # Display results
+                        st.write(f"Showing {len(filtered_df)} records")
+                        st.dataframe(filtered_df)
+                        
+                        # Export functionality
+                        if st.button("Export to CSV"):
+                            csv = filtered_df.to_csv(index=False)
+                            st.download_button(
+                                label="Download CSV",
+                                data=csv,
+                                file_name=f"nfl_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                                mime="text/csv"
+                            )
     
     with tab2:
-        # [Zodiac Calculator code remains the same...]
-        st.write("Zodiac Calculator functionality available in the next tab.")
+        st.subheader("Zodiac Sign Calculator")
+        
+        # Date input
+        default_date = date(1988, 1, 1)
+        birth_date = st.date_input(
+            "Enter birth date",
+            value=default_date,
+            format="MM/DD/YYYY"
+        )
+        
+        if birth_date:
+            zodiac_sign = get_zodiac_sign(birth_date)
+            compatible_signs = get_compatible_signs(zodiac_sign)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"### Your Zodiac Sign: {zodiac_sign}")
+                st.write("### Compatible Signs:")
+                for sign in compatible_signs:
+                    st.write(f"- {sign}")
+            
+            with col2:
+                characteristics = {
+                    'Aries': ['Leadership', 'Energy', 'Adventure'],
+                    'Taurus': ['Reliability', 'Patience', 'Determination'],
+                    'Gemini': ['Adaptability', 'Communication', 'Curiosity'],
+                    'Cancer': ['Intuition', 'Emotional Intelligence', 'Nurturing'],
+                    'Leo': ['Confidence', 'Creativity', 'Enthusiasm'],
+                    'Virgo': ['Analysis', 'Practicality', 'Attention to Detail'],
+                    'Libra': ['Diplomacy', 'Balance', 'Grace'],
+                    'Scorpio': ['Passion', 'Intuition', 'Power'],
+                    'Sagittarius': ['Optimism', 'Freedom', 'Adventure'],
+                    'Capricorn': ['Ambition', 'Discipline', 'Patience'],
+                    'Aquarius': ['Innovation', 'Independence', 'Originality'],
+                    'Pisces': ['Empathy', 'Creativity', 'Intuition']
+                }
+                
+                st.write("### Your Characteristics:")
+                for trait in characteristics.get(zodiac_sign, []):
+                    st.write(f"- {trait}")
 
 if __name__ == "__main__":
     main()
