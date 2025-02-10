@@ -2,50 +2,47 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, date
-import time
 
 # RapidAPI Configuration
 RAPIDAPI_KEY = "e76e6d59aamshd574b36f1e312ap1a642ejsn4a367f21a64c"
 RAPIDAPI_HOST = "nfl-football-api.p.rapidapi.com"
-API_URL = "https://nfl-football-api.p.rapidapi.com/nfl-leagueinfo"
+API_URL = "https://nfl-football-api.p.rapidapi.com"
 
-@st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_nfl_data():
-    """Fetch NFL data from the API with rate limiting"""
+    """Fetch NFL data from the API"""
+    url = f"{API_URL}/nfl-leagueinfo"
+    
     headers = {
-        "x-rapidapi-host": RAPIDAPI_HOST,
-        "x-rapidapi-key": RAPIDAPI_KEY
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST
     }
     
-    max_retries = 3
-    base_delay = 2  # Base delay in seconds
-    
-    for attempt in range(max_retries):
-        try:
-            # Add delay between attempts
-            if attempt > 0:
-                delay = base_delay * (2 ** (attempt - 1))  # Exponential backoff
-                st.warning(f"Rate limit hit. Waiting {delay} seconds before retry...")
-                time.sleep(delay)
+    try:
+        st.sidebar.write("Making API request...")
+        st.sidebar.write("URL:", url)
+        st.sidebar.write("Headers:", {k: '***' if 'key' in k.lower() else v for k, v in headers.items()})
+        
+        response = requests.get(url, headers=headers)
+        
+        # Print response details for debugging
+        st.sidebar.write(f"Response Status: {response.status_code}")
+        if response.status_code != 200:
+            st.sidebar.write("Response Content:", response.text)
+        
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 403:
+            st.error("Access forbidden. Please check your API subscription.")
+        elif response.status_code == 429:
+            st.error("Rate limit exceeded. Please try again in a few minutes.")
+        else:
+            st.error(f"Error {response.status_code}: {response.text}")
+        
+        return None
             
-            response = requests.get(API_URL, headers=headers)
-            
-            if response.status_code == 200:
-                return response.json()
-            elif response.status_code == 429:  # Too Many Requests
-                if attempt < max_retries - 1:
-                    continue
-                st.error("Rate limit exceeded. Please try again in a few minutes.")
-            else:
-                st.error(f"Error {response.status_code}: {response.text}")
-            
-        except requests.exceptions.RequestException as e:
-            st.error(f"Request error: {str(e)}")
-            if attempt < max_retries - 1:
-                continue
-            break
-    
-    return None
+    except requests.exceptions.RequestException as e:
+        st.error(f"Request error: {str(e)}")
+        return None
 
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
