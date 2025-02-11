@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import nfl_data_py as nfl
 from datetime import datetime, date
+import requests.exceptions
+import sys
+import traceback
 
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
@@ -55,21 +58,38 @@ def get_compatible_signs(zodiac):
     }
     return compatibility.get(zodiac, [])
 
+@st.cache_data(ttl=3600)  # Cache data for 1 hour
 def fetch_nfl_data(year=None):
-    """Fetch NFL player data using nfl_data_py"""
+    """Fetch NFL player data using nfl_data_py with improved error handling"""
     if year is None:
         year = datetime.now().year
     
     try:
-        # Fetch roster data for the current year
+        # Try to fetch roster data for the current year
         df = nfl.import_seasonal_rosters([year])
         
+        if df is None or df.empty:
+            st.error(f"No data available for year {year}")
+            return None
+            
         # Clean the data using nfl_data_py's built-in cleaner
         df = nfl.clean_nfl_data(df)
-        
         return df
-    except Exception as e:
+        
+    except requests.exceptions.HTTPError as http_err:
+        st.error(f"HTTP Error occurred: {http_err}")
+        return None
+    except requests.exceptions.ConnectionError:
+        st.error("Connection Error: Failed to connect to the server. Please check your internet connection.")
+        return None
+    except requests.exceptions.Timeout:
+        st.error("Timeout Error: The request timed out. Please try again.")
+        return None
+    except requests.exceptions.RequestException as e:
         st.error(f"Error fetching data: {str(e)}")
+        return None
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {str(e)}")
         return None
 
 def calculate_age(birth_date):
@@ -87,48 +107,53 @@ def process_player_data(df):
     if df is None:
         return None
     
-    # Select and rename columns
-    columns = {
-        'team': 'Team',
-        'position': 'Position',
-        'jersey_number': 'Number',
-        'first_name': 'First Name',
-        'last_name': 'Last Name',
-        'height': 'Height',
-        'weight': 'Weight',
-        'birth_date': 'Birth Date',
-        'college': 'College'
-    }
-    
-    # Create new dataframe with selected columns
-    result_df = pd.DataFrame()
-    for api_col, display_col in columns.items():
-        if api_col in df.columns:
-            result_df[display_col] = df[api_col]
-        else:
-            result_df[display_col] = None
-    
-    # Format birth date and calculate age
-    if 'Birth Date' in result_df.columns:
-        result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
-        result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
-        # Add zodiac sign right after birth date
-        result_df['Zodiac'] = result_df['Birth Date'].apply(get_zodiac_sign)
-        # Format birth date for display
-        result_df['Birth Date'] = result_df['Birth Date'].dt.strftime('%Y-%m-%d')
-    
-    # Fill any NA values
-    result_df['Team'] = result_df['Team'].fillna('Free Agent')
-    result_df['Position'] = result_df['Position'].fillna('Unknown')
-    
-    # Reorder columns to ensure Zodiac comes right after Birth Date
-    cols = result_df.columns.tolist()
-    birth_date_idx = cols.index('Birth Date')
-    cols.remove('Zodiac')
-    cols.insert(birth_date_idx + 1, 'Zodiac')
-    result_df = result_df[cols]
-    
-    return result_df
+    try:
+        # Select and rename columns
+        columns = {
+            'team': 'Team',
+            'position': 'Position',
+            'jersey_number': 'Number',
+            'first_name': 'First Name',
+            'last_name': 'Last Name',
+            'height': 'Height',
+            'weight': 'Weight',
+            'birth_date': 'Birth Date',
+            'college': 'College'
+        }
+        
+        # Create new dataframe with selected columns
+        result_df = pd.DataFrame()
+        for api_col, display_col in columns.items():
+            if api_col in df.columns:
+                result_df[display_col] = df[api_col]
+            else:
+                st.warning(f"Column '{api_col}' not found in data. Some information may be missing.")
+                result_df[display_col] = None
+        
+        # Format birth date and calculate age
+        if 'Birth Date' in result_df.columns:
+            result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
+            result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
+            # Add zodiac sign right after birth date
+            result_df['Zodiac'] = result_df['Birth Date'].apply(get_zodiac_sign)
+            # Format birth date for display
+            result_df['Birth Date'] = result_df['Birth Date'].dt.strftime('%Y-%m-%d')
+        
+        # Fill any NA values
+        result_df['Team'] = result_df['Team'].fillna('Free Agent')
+        result_df['Position'] = result_df['Position'].fillna('Unknown')
+        
+        # Reorder columns to ensure Zodiac comes right after Birth Date
+        cols = result_df.columns.tolist()
+        birth_date_idx = cols.index('Birth Date')
+        cols.remove('Zodiac')
+        cols.insert(birth_date_idx + 1, 'Zodiac')
+        result_df = result_df[cols]
+        
+        return result_df
+    except Exception as e:
+        st.error(f"Error processing player data: {str(e)}")
+        return None
 
 def highlight_compatible_signs(val, compatible_signs):
     """Return CSS style if zodiac sign is compatible"""
@@ -143,6 +168,9 @@ def highlight_repeating_numbers(val):
 
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
+    
+    # Add a loading state container at the top
+    status_container = st.empty()
 
     # Create sidebar for filters
     st.sidebar.header("Zodiac Calculator")
@@ -179,14 +207,19 @@ def main():
         index=0
     )
 
-    # Fetch data
-    with st.spinner("Loading players..."):
-        data = fetch_nfl_data(selected_year)
-        if data is not None:
-            df = process_player_data(data)
-        else:
-            st.error("Failed to fetch data")
+    # Fetch data with status updates
+    status_container.info("Loading NFL player data...")
+    data = fetch_nfl_data(selected_year)
+    
+    if data is not None:
+        status_container.success("Data loaded successfully!")
+        df = process_player_data(data)
+        if df is None:
+            status_container.error("Error processing player data")
             st.stop()
+    else:
+        status_container.error("Failed to fetch data")
+        st.stop()
     
     # Get unique teams and positions
     unique_teams = df['Team'].unique()
