@@ -127,7 +127,6 @@ def load_nfl_data(year):
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         return None
-
 def process_dataframe(df):
     """Process the dataframe to ensure consistent column names and formats"""
     try:
@@ -163,11 +162,11 @@ def process_dataframe(df):
         elif 'Birth Date' in processed_df.columns:
             processed_df['Birth Date'] = pd.to_datetime(processed_df['Birth Date'])
         
-        # Process player name
+        # Process player name - ensure we're using 'Name' column
         if 'player_name' in processed_df.columns:
-            processed_df[['First Name', 'Last Name']] = processed_df['player_name'].str.split(' ', n=1, expand=True)
+            processed_df['Name'] = processed_df['player_name']
         elif 'full_name' in processed_df.columns:
-            processed_df[['First Name', 'Last Name']] = processed_df['full_name'].str.split(' ', n=1, expand=True)
+            processed_df['Name'] = processed_df['full_name']
         
         # Format height
         if 'height' in processed_df.columns:
@@ -190,37 +189,6 @@ def process_dataframe(df):
     except Exception as e:
         st.error(f"Error processing data: {str(e)}")
         return None
-
-# Constants
-ZODIAC_SYMBOLS = {
-    'Aries': '♈',
-    'Taurus': '♉',
-    'Gemini': '♊',
-    'Cancer': '♋',
-    'Leo': '♌',
-    'Virgo': '♍',
-    'Libra': '♎',
-    'Scorpio': '♏',
-    'Sagittarius': '♐',
-    'Capricorn': '♑',
-    'Aquarius': '♒',
-    'Pisces': '♓'
-}
-
-ZODIAC_TRAITS = {
-    'Aries': 'Confident, competitive, natural leader',
-    'Taurus': 'Reliable, patient, determined',
-    'Gemini': 'Adaptable, versatile, quick learner',
-    'Cancer': 'Protective, intuitive, team-oriented',
-    'Leo': 'Charismatic, confident, born leader',
-    'Virgo': 'Detail-oriented, analytical, hardworking',
-    'Libra': 'Balanced, diplomatic, fair',
-    'Scorpio': 'Intense, strategic, powerful',
-    'Sagittarius': 'Optimistic, adventurous, independent',
-    'Capricorn': 'Disciplined, responsible, manager',
-    'Aquarius': 'Innovative, progressive, original',
-    'Pisces': 'Intuitive, empathetic, adaptable'
-}
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
     
