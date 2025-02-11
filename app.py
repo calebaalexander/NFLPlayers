@@ -104,7 +104,7 @@ def main():
     st.sidebar.header("Zodiac Calculator")
     
     # Add date input for zodiac calculation
-    default_date = date(1988, 1, 1)
+    default_date = date(1988, 10, 25)  # Changed to October 25, 1988
     user_date = st.sidebar.date_input(
         "Enter your birth date (MM/DD/YYYY)",
         value=default_date,
