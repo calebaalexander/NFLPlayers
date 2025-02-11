@@ -169,6 +169,12 @@ def main():
         
         df = df.rename(columns={k: v for k, v in column_mappings.items() if k in df.columns})
         
+        # Round numeric columns to whole numbers
+        numeric_columns = ['Weight', 'Number', 'Age']
+        for col in numeric_columns:
+            if col in df.columns:
+                df[col] = df[col].fillna(0).astype(int)
+        
         # Select and reorder columns, only including those that exist
         desired_columns = ['First Name', 'Last Name', 'Team', 'Position', 'Number', 
                          'Birth Date', 'Zodiac', 'Age', 'Height', 'Weight', 'College']
@@ -227,22 +233,25 @@ def main():
                  len(str(int(x))) > 1 and len(set(str(int(x)))) == 1 
                  else '', subset=['Number'])
 
-    # Display the dataframe
+    # Display the dataframe with integer formats
     st.dataframe(
         styled_df,
         hide_index=True,
         column_config={
             "Number": st.column_config.NumberColumn(
                 "Number",
-                format="%d"
+                format="%d",
+                step=1
             ),
             "Weight": st.column_config.NumberColumn(
                 "Weight",
-                format="%d lbs"
+                format="%d lbs",
+                step=1
             ),
             "Age": st.column_config.NumberColumn(
                 "Age",
-                format="%d"
+                format="%d",
+                step=1
             ),
             "Birth Date": st.column_config.DateColumn(
                 "Birth Date",
