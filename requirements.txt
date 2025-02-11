@@ -4,3 +4,4 @@ pandas>=1.0,<2.0
 numpy>=1.0,<2.0
 appdirs>1
 fastparquet>0.5
+plotly
