@@ -1,97 +1,280 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime 
-from bs4 import BeautifulSoup
-import re
+import nfl_data_py as nfl
+from datetime import datetime, date
 
-def process_roster_data(file_content):
-    position_map = {
-        'LWR': 'WR', 'RWR': 'WR', 'SWR': 'WR',
-        'LDE': 'DE', 'RDE': 'DE',
-        'WLB': 'LB', 'MLB': 'LB', 'ROLB': 'LB', 
-        'LCB': 'CB', 'RCB': 'CB',
-        'PK': 'Kicker'
+def get_zodiac_sign(birth_date):
+    """Calculate zodiac sign from birth date"""
+    try:
+        if isinstance(birth_date, str):
+            birth_date = pd.to_datetime(birth_date)
+        
+        month = birth_date.month
+        day = birth_date.day
+        
+        zodiac_dates = [
+            (120, 'Capricorn'),  # Dec 22 - Jan 19
+            (219, 'Aquarius'),   # Jan 20 - Feb 18
+            (320, 'Pisces'),     # Feb 19 - Mar 20
+            (420, 'Aries'),      # Mar 21 - Apr 19
+            (521, 'Taurus'),     # Apr 20 - May 20
+            (621, 'Gemini'),     # May 21 - Jun 20
+            (723, 'Cancer'),     # Jun 21 - Jul 22
+            (823, 'Leo'),        # Jul 23 - Aug 22
+            (923, 'Virgo'),      # Aug 23 - Sep 22
+            (1023, 'Libra'),     # Sep 23 - Oct 22
+            (1122, 'Scorpio'),   # Oct 23 - Nov 21
+            (1222, 'Sagittarius'),# Nov 22 - Dec 21
+            (1232, 'Capricorn')  # Dec 22 - Dec 31
+        ]
+        
+        date_num = month * 100 + day
+        
+        for cutoff, sign in zodiac_dates:
+            if date_num <= cutoff:
+                return sign
+        return 'Capricorn'
+    except:
+        return None
+
+def get_compatible_signs(zodiac):
+    """Return most compatible zodiac signs"""
+    compatibility = {
+        'Aries': ['Leo', 'Sagittarius', 'Gemini'],
+        'Taurus': ['Virgo', 'Capricorn', 'Cancer'],
+        'Gemini': ['Libra', 'Aquarius', 'Aries'],
+        'Cancer': ['Scorpio', 'Pisces', 'Taurus'],
+        'Leo': ['Aries', 'Sagittarius', 'Gemini'],
+        'Virgo': ['Taurus', 'Capricorn', 'Cancer'],
+        'Libra': ['Gemini', 'Aquarius', 'Leo'],
+        'Scorpio': ['Cancer', 'Pisces', 'Virgo'],
+        'Sagittarius': ['Aries', 'Leo', 'Libra'],
+        'Capricorn': ['Taurus', 'Virgo', 'Pisces'],
+        'Aquarius': ['Gemini', 'Libra', 'Sagittarius'],
+        'Pisces': ['Cancer', 'Scorpio', 'Capricorn']
     }
-    exclude_positions = {'PT', 'LS', 'H', 'KO', 'PR', 'KR', 'FUT'}
+    return compatibility.get(zodiac, [])
+
+def fetch_nfl_data(year=None):
+    """Fetch NFL player data using nfl_data_py"""
+    if year is None:
+        year = datetime.now().year
     
-    soup = BeautifulSoup(file_content, 'html.parser')
-    data = []
-    current_team = None
+    try:
+        # Fetch roster data for the current year
+        df = nfl.import_seasonal_rosters([year])
+        
+        # Clean the data using nfl_data_py's built-in cleaner
+        df = nfl.clean_nfl_data(df)
+        
+        return df
+    except Exception as e:
+        st.error(f"Error fetching data: {str(e)}")
+        return None
+
+def calculate_age(birth_date):
+    """Calculate age from birth date, handling invalid dates"""
+    try:
+        birth_date = pd.to_datetime(birth_date)
+        today = pd.Timestamp.now()
+        age = (today - birth_date).days / 365.25
+        return int(age) if pd.notnull(age) else None
+    except:
+        return None
+
+def process_player_data(df):
+    """Process the NFL data and add additional columns"""
+    if df is None:
+        return None
     
-    for row in soup.find_all('tr'):
-        if row.find('td', class_='dt-sh-all'):
-            current_team = row.find('td').text.split('-')[1].strip()
-            continue
-            
-        cells = row.find_all('td')
-        if len(cells) >= 4 and current_team:
-            team = cells[0].text.strip()
-            pos = cells[1].text.strip()
-            
-            if pos in exclude_positions:
-                continue
-                
-            pos = position_map.get(pos, pos)
-            number = cells[2].text.strip()
-            name = cells[3].find('a').text.strip() if cells[3].find('a') else ''
-            
-            if name:
-                data.append({
-                    'Team': team,
-                    'Position': pos, 
-                    'Number': number,
-                    'Name': name
-                })
+    # Select and rename columns
+    columns = {
+        'team': 'Team',
+        'position': 'Position',
+        'jersey_number': 'Number',
+        'first_name': 'First Name',
+        'last_name': 'Last Name',
+        'height': 'Height',
+        'weight': 'Weight',
+        'birth_date': 'Birth Date',
+        'college': 'College'
+    }
     
-    return pd.DataFrame(data)
+    # Create new dataframe with selected columns
+    result_df = pd.DataFrame()
+    for api_col, display_col in columns.items():
+        if api_col in df.columns:
+            result_df[display_col] = df[api_col]
+        else:
+            result_df[display_col] = None
+    
+    # Format birth date and calculate age
+    if 'Birth Date' in result_df.columns:
+        result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
+        result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
+        # Add zodiac sign right after birth date
+        result_df['Zodiac'] = result_df['Birth Date'].apply(get_zodiac_sign)
+        # Format birth date for display
+        result_df['Birth Date'] = result_df['Birth Date'].dt.strftime('%Y-%m-%d')
+    
+    # Fill any NA values
+    result_df['Team'] = result_df['Team'].fillna('Free Agent')
+    result_df['Position'] = result_df['Position'].fillna('Unknown')
+    
+    # Reorder columns to ensure Zodiac comes right after Birth Date
+    cols = result_df.columns.tolist()
+    birth_date_idx = cols.index('Birth Date')
+    cols.remove('Zodiac')
+    cols.insert(birth_date_idx + 1, 'Zodiac')
+    result_df = result_df[cols]
+    
+    return result_df
+
+def highlight_compatible_signs(val, compatible_signs):
+    """Return CSS style if zodiac sign is compatible"""
+    return 'background-color: yellow' if val in compatible_signs else ''
+
+def highlight_repeating_numbers(val):
+    """Return CSS style if number is repeating"""
+    if pd.isna(val) or not isinstance(val, (int, float)):
+        return ''
+    num_str = str(int(val))
+    return 'background-color: green' if len(num_str) > 1 and len(set(num_str)) == 1 else ''
 
 def main():
-    st.set_page_config(page_title="NFL Roster Explorer", page_icon="🏈", layout="wide")
-    st.title("🏈 NFL Roster Explorer")
+    st.title("NFL Players Roster: Zodiac Edition")
+
+    # Create sidebar for filters
+    st.sidebar.header("Zodiac Calculator")
     
-    uploaded_file = st.file_uploader("Upload NFL Roster File", type=['txt', 'html'])
+    # Add date input for zodiac calculation
+    default_date = date(1988, 1, 1)
+    user_date = st.sidebar.date_input(
+        "Enter your birth date (MM/DD/YYYY)",
+        value=default_date,
+        format="MM/DD/YYYY"
+    )
     
-    if uploaded_file:
-        file_content = uploaded_file.getvalue().decode('utf-8')
-        df = process_roster_data(file_content)
+    # Calculate and display user's zodiac sign
+    user_zodiac = get_zodiac_sign(user_date)
+    st.sidebar.write(f"Your Zodiac Sign: **{user_zodiac}**")
+    
+    # Display compatible signs
+    compatible_signs = get_compatible_signs(user_zodiac)
+    st.sidebar.write("Most Compatible Signs:")
+    for sign in compatible_signs:
+        st.sidebar.write(f"- {sign}")
         
-        col1, col2 = st.columns([1, 3])
-        
-        with col1:
-            st.subheader("Filters")
-            search = st.text_input("Search players", placeholder="Name or number...")
-            
-            filter_columns = ['Team', 'Position']
-            filters = {}
-            for col in filter_columns:
-                values = ['All'] + sorted(df[col].unique().tolist())
-                filters[col] = st.selectbox(f'Filter by {col}', values)
-        
-        with col2:
-            filtered_df = df.copy()
-            
-            for col, value in filters.items():
-                if value != 'All':
-                    filtered_df = filtered_df[filtered_df[col] == value]
-            
-            if search:
-                search_lower = search.lower()
-                mask = filtered_df.astype(str).apply(
-                    lambda x: x.str.lower().str.contains(search_lower, na=False)
-                ).any(axis=1)
-                filtered_df = filtered_df[mask]
-            
-            st.write(f"Showing {len(filtered_df)} players")
-            st.dataframe(filtered_df)
-            
-            if st.button("Export to CSV"):
-                csv = filtered_df.to_csv(index=False)
-                st.download_button(
-                    label="Download CSV",
-                    data=csv,
-                    file_name=f"nfl_roster_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
+    # Add toggle for compatibility filter
+    show_compatible = st.sidebar.checkbox("Show only compatible players", value=False)
+
+    st.sidebar.divider()
+    st.sidebar.header("Filters")
+
+    # Year selection
+    current_year = datetime.now().year
+    selected_year = st.sidebar.selectbox(
+        "Select Year",
+        range(current_year, 1999, -1),
+        index=0
+    )
+
+    # Fetch data
+    with st.spinner("Loading players..."):
+        data = fetch_nfl_data(selected_year)
+        if data is not None:
+            df = process_player_data(data)
+        else:
+            st.error("Failed to fetch data")
+            st.stop()
+    
+    # Get unique teams and positions
+    unique_teams = df['Team'].unique()
+    unique_positions = df['Position'].unique()
+    valid_teams = sorted([team for team in unique_teams if team])
+    valid_positions = sorted([pos for pos in unique_positions if pos])
+    
+    # Team filter in sidebar
+    selected_team = st.sidebar.selectbox(
+        "Select Team",
+        ["All Teams"] + valid_teams
+    )
+    
+    # Position filter in sidebar
+    selected_position = st.sidebar.selectbox(
+        "Select Position",
+        ["All Positions"] + valid_positions
+    )
+
+    # Filter based on selections
+    filtered_df = df.copy()
+
+    # Apply zodiac compatibility filter
+    if show_compatible:
+        filtered_df = filtered_df[filtered_df['Zodiac'].isin(compatible_signs)]
+
+    # Apply team filter
+    if selected_team != "All Teams":
+        filtered_df = filtered_df[filtered_df['Team'] == selected_team]
+    
+    # Apply position filter
+    if selected_position != "All Positions":
+        filtered_df = filtered_df[filtered_df['Position'] == selected_position]
+
+    # Add search functionality
+    search = st.text_input("Search players", "")
+    
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        mask = (
+            filtered_df['First Name'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Last Name'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Team'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['College'].str.lower().str.contains(search_lower, na=False)
+        )
+        filtered_df = filtered_df[mask]
+
+    # Display metrics
+    if show_compatible:
+        st.write(f"Showing {len(filtered_df)} compatible players")
+    else:
+        st.write(f"Showing {len(filtered_df)} players")
+
+    # Apply styling
+    styled_df = filtered_df.style\
+        .applymap(lambda x: highlight_compatible_signs(x, compatible_signs), subset=['Zodiac'])\
+        .applymap(highlight_repeating_numbers, subset=['Number'])
+
+    # Display the styled dataframe
+    st.dataframe(
+        styled_df,
+        hide_index=True,
+        column_config={
+            "Number": st.column_config.NumberColumn(
+                "Number",
+                format="%d"
+            ),
+            "Weight": st.column_config.NumberColumn(
+                "Weight",
+                format="%d lbs"
+            ),
+            "Age": st.column_config.NumberColumn(
+                "Age",
+                format="%d"
+            )
+        }
+    )
+
+    # Export functionality
+    if st.button("Export to CSV"):
+        csv = filtered_df.to_csv(index=False)
+        st.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name=f"nfl_players_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
 
 if __name__ == "__main__":
     main()
