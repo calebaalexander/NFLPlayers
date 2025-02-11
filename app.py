@@ -266,18 +266,47 @@ def main():
     for sign in compatible_signs:
         st.sidebar.write(f"{ZODIAC_SYMBOLS.get(sign, '')} {sign}")
 
-    # Show search box and filters above the tabs
+    # Sidebar filters
+    st.sidebar.divider()
+    st.sidebar.header("Filters")
+    
+    # Team filter in sidebar
+    unique_teams = sorted(df['Team'].dropna().unique())
+    selected_team = st.sidebar.selectbox(
+        "Select Team",
+        ["All Teams"] + list(unique_teams)
+    )
+
+    # Position filter in sidebar
+    unique_positions = sorted(df['Position'].dropna().unique())
+    selected_position = st.sidebar.selectbox(
+        "Select Position",
+        ["All Positions"] + list(unique_positions)
+    )
+    
+    # Compatibility and Angel number filters in sidebar
+    show_compatible = st.sidebar.checkbox("Show only compatible players", value=True)
+    show_angel = st.sidebar.checkbox("Show only Angel numbers", value=False)
+    
+    # Search box in main area
     search = st.text_input("Search players", "")
     
-    # Filters
-    show_compatible = st.checkbox("Show only compatible players", value=True)
-    show_angel = st.checkbox("Show only Angel numbers", value=False)
-
     # Apply filters
     filtered_df = df.copy()
     
+    # Apply team filter
+    if selected_team != "All Teams":
+        filtered_df = filtered_df[filtered_df['Team'] == selected_team]
+    
+    # Apply position filter
+    if selected_position != "All Positions":
+        filtered_df = filtered_df[filtered_df['Position'] == selected_position]
+    
+    # Apply compatibility filter
     if show_compatible:
         filtered_df = filtered_df[filtered_df['Zodiac'].isin(compatible_signs)]
+    
+    # Apply angel numbers filter
     if show_angel:
         filtered_df = filtered_df[filtered_df['Number'].apply(is_angel_number)]
     
@@ -338,16 +367,3 @@ def main():
                 "Height": st.column_config.TextColumn(
                     "Height"
                 )
-            }
-        )
-    
-    with tab2:
-        st.subheader("Position Zodiac Analysis")
-        zodiac_dist = get_position_zodiac_distribution(df)
-        
-        for _, row in zodiac_dist.iterrows():
-            if row['Zodiac']:
-                st.write(f"{row['Position']}: {ZODIAC_SYMBOLS.get(row['Zodiac'], '')} {row['Zodiac']}")
-
-if __name__ == "__main__":
-    main()
