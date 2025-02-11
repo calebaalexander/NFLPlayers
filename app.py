@@ -3,7 +3,7 @@ import pandas as pd
 import nfl_data_py as nfl
 from datetime import datetime, date
 
-# Helper functions first
+# Helper functions
 def format_height(height_str):
     """Convert height from inches to feet and inches format"""
     if pd.isna(height_str):
@@ -96,8 +96,7 @@ def get_position_zodiac_distribution(df):
         ).reset_index()
     except:
         return pd.DataFrame(columns=['Position', 'Zodiac'])
-
-# Data loading and processing
+        # Data loading and processing
 @st.cache_data
 def load_nfl_data(year):
     """Load NFL roster data for a given year"""
@@ -211,7 +210,6 @@ ZODIAC_TRAITS = {
     'Aquarius': 'Innovative, progressive, original',
     'Pisces': 'Intuitive, empathetic, adaptable'
 }
-
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
     
@@ -340,6 +338,16 @@ def main():
                 "Birth Date": st.column_config.TextColumn(
                     "Birth Date"
                 ),
+                "Height": st.column_config.TextColumn(
+                    "Height"
+                )
+            }
+        )
+        
+        # Birthday matches section below
+        st.subheader("Birthday Matches")
+        user_birthday = user_date.strftime('%m-%d')
+        
         # Convert Birth Date back to datetime for comparison
         df['Temp Date'] = pd.to_datetime(df['Birth Date'])
         birthday_matches = df[df['Temp Date'].dt.strftime('%m-%d') == user_birthday]
@@ -359,28 +367,6 @@ def main():
                     st.write(f"🎯 Matching lucky number: {user_number}!")
         else:
             st.write("No players share your birthday.")
-        
-        # Birthday matches section below
-        st.subheader("Birthday Matches")
-        user_birthday = user_date.strftime('%m-%d')
-            filtered_df,
-            column_config={
-                "Zodiac": st.column_config.Column(
-                    "Zodiac",
-                    help="Hover for zodiac traits"
-                ),
-                "Number": st.column_config.NumberColumn(
-                    "Number",
-                    format="%d"
-                ),
-                "Birth Date": st.column_config.TextColumn(
-                    "Birth Date"
-                ),
-                "Height": st.column_config.TextColumn(
-                    "Height"
-                )
-            }
-        )
     
     with tab2:
         st.subheader("Position Zodiac Analysis")
