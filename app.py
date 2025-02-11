@@ -328,7 +328,7 @@ def main():
         )
         filtered_df = filtered_df[mask]
     
-    # Tabs for different views
+   # Tabs for different views
     tab1, tab2 = st.tabs(["Player Roster", "Position Zodiac Analysis"])
     
     with tab1:
@@ -340,6 +340,7 @@ def main():
         
         st.dataframe(
             display_df,
+            hide_index=True,  # Hide the index column
             column_config={
                 "Zodiac": st.column_config.Column(
                     "Zodiac",
@@ -367,14 +368,13 @@ def main():
         user_birthday = user_date.strftime('%m-%d')
         
         # Convert Birth Date back to datetime for comparison
-        df['Temp Date'] = pd.to_datetime(df['Birth Date'])
-        birthday_matches = df[df['Temp Date'].dt.strftime('%m-%d') == user_birthday]
+        birthday_matches = df[pd.to_datetime(df['Birth Date']).dt.strftime('%m-%d') == user_birthday]
         
         if not birthday_matches.empty:
-            birthday_matches = birthday_matches.sort_values('Temp Date', ascending=False)
+            birthday_matches = birthday_matches.sort_values('Birth Date', ascending=False)
             for _, player in birthday_matches.iterrows():
-                exact_match = player['Temp Date'].date() == user_date
-                player_text = f"{player['First Name']} {player['Last Name']} ({player['Birth Date']})"
+                exact_match = pd.to_datetime(player['Birth Date']).date() == user_date
+                player_text = f"{player['Name']} ({player['Birth Date']})"
                 
                 if exact_match:
                     st.markdown(f"**:gold[{player_text}]**")
@@ -393,6 +393,3 @@ def main():
         for _, row in zodiac_dist.iterrows():
             if row['Zodiac']:
                 st.write(f"{row['Position']}: {ZODIAC_SYMBOLS.get(row['Zodiac'], '')} {row['Zodiac']}")
-
-if __name__ == "__main__":
-    main()
