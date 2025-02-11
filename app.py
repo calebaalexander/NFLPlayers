@@ -367,3 +367,16 @@ def main():
                 "Height": st.column_config.TextColumn(
                     "Height"
                 )
+            }
+        )
+    
+    with tab2:
+        st.subheader("Position Zodiac Analysis")
+        zodiac_dist = get_position_zodiac_distribution(df)
+        
+        for _, row in zodiac_dist.iterrows():
+            if row['Zodiac']:
+                st.write(f"{row['Position']}: {ZODIAC_SYMBOLS.get(row['Zodiac'], '')} {row['Zodiac']}")
+
+if __name__ == "__main__":
+    main()
