@@ -251,15 +251,5 @@ def main():
         }
     )
 
-    # Export functionality
-    if st.button("Export to CSV"):
-        csv = filtered_df.to_csv(index=False)
-        st.download_button(
-            label="Download CSV",
-            data=csv,
-            file_name=f"nfl_players_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
-        )
-
 if __name__ == "__main__":
     main()
