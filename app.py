@@ -3,8 +3,11 @@ import pandas as pd
 import nfl_data_py as nfl
 from datetime import datetime, date
 import requests.exceptions
-import sys
-import traceback
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
@@ -37,7 +40,8 @@ def get_zodiac_sign(birth_date):
             if date_num <= cutoff:
                 return sign
         return 'Capricorn'
-    except:
+    except Exception as e:
+        logger.error(f"Error calculating zodiac sign: {e}")
         return None
 
 def get_compatible_signs(zodiac):
@@ -58,48 +62,49 @@ def get_compatible_signs(zodiac):
     }
     return compatibility.get(zodiac, [])
 
-@st.cache_data(ttl=3600)  # Cache data for 1 hour
+@st.cache_data(ttl=3600)
 def fetch_nfl_data(year=None):
-    """Fetch NFL player data using nfl_data_py with improved error handling"""
+    """Fetch NFL player data using nfl_data_py"""
     if year is None:
         year = datetime.now().year
     
     try:
-        # Try to fetch roster data for the current year
-        df = nfl.import_seasonal_rosters([year])
+        # Try to fetch weekly roster data first
+        logger.info(f"Fetching weekly roster data for year {year}")
+        df = nfl.import_weekly_rosters([year])
         
         if df is None or df.empty:
-            st.error(f"No data available for year {year}")
+            logger.info(f"Weekly roster empty, trying seasonal roster for year {year}")
+            # If weekly roster is empty, try seasonal roster
+            df = nfl.import_seasonal_rosters([year])
+        
+        if df is None or df.empty:
+            logger.error(f"No data available for year {year}")
             return None
-            
-        # Clean the data using nfl_data_py's built-in cleaner
+        
+        # Take the most recent roster entry for each player
+        df = df.sort_values('week', ascending=False).groupby(['player_id', 'season']).first().reset_index()
+        
+        # Clean the data
         df = nfl.clean_nfl_data(df)
+        logger.info(f"Successfully fetched data with {len(df)} players")
         return df
         
-    except requests.exceptions.HTTPError as http_err:
-        st.error(f"HTTP Error occurred: {http_err}")
-        return None
-    except requests.exceptions.ConnectionError:
-        st.error("Connection Error: Failed to connect to the server. Please check your internet connection.")
-        return None
-    except requests.exceptions.Timeout:
-        st.error("Timeout Error: The request timed out. Please try again.")
-        return None
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching data: {str(e)}")
-        return None
     except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
+        logger.error(f"Error fetching NFL data: {str(e)}")
         return None
 
 def calculate_age(birth_date):
     """Calculate age from birth date, handling invalid dates"""
     try:
+        if pd.isna(birth_date):
+            return None
         birth_date = pd.to_datetime(birth_date)
         today = pd.Timestamp.now()
         age = (today - birth_date).days / 365.25
-        return int(age) if pd.notnull(age) else None
-    except:
+        return int(age)
+    except Exception as e:
+        logger.error(f"Error calculating age: {e}")
         return None
 
 def process_player_data(df):
@@ -113,8 +118,7 @@ def process_player_data(df):
             'team': 'Team',
             'position': 'Position',
             'jersey_number': 'Number',
-            'first_name': 'First Name',
-            'last_name': 'Last Name',
+            'player_name': 'Player Name',
             'height': 'Height',
             'weight': 'Weight',
             'birth_date': 'Birth Date',
@@ -127,7 +131,7 @@ def process_player_data(df):
             if api_col in df.columns:
                 result_df[display_col] = df[api_col]
             else:
-                st.warning(f"Column '{api_col}' not found in data. Some information may be missing.")
+                logger.warning(f"Column '{api_col}' not found in data")
                 result_df[display_col] = None
         
         # Format birth date and calculate age
@@ -143,15 +147,19 @@ def process_player_data(df):
         result_df['Team'] = result_df['Team'].fillna('Free Agent')
         result_df['Position'] = result_df['Position'].fillna('Unknown')
         
-        # Reorder columns to ensure Zodiac comes right after Birth Date
-        cols = result_df.columns.tolist()
-        birth_date_idx = cols.index('Birth Date')
-        cols.remove('Zodiac')
-        cols.insert(birth_date_idx + 1, 'Zodiac')
-        result_df = result_df[cols]
+        # Split player name into first and last name
+        if 'Player Name' in result_df.columns:
+            result_df[['First Name', 'Last Name']] = result_df['Player Name'].str.split(' ', n=1, expand=True)
+            result_df = result_df.drop('Player Name', axis=1)
+        
+        # Reorder columns
+        desired_order = ['First Name', 'Last Name', 'Team', 'Position', 'Number', 'Birth Date', 
+                        'Zodiac', 'Age', 'Height', 'Weight', 'College']
+        result_df = result_df.reindex(columns=[col for col in desired_order if col in result_df.columns])
         
         return result_df
     except Exception as e:
+        logger.error(f"Error processing player data: {e}")
         st.error(f"Error processing player data: {str(e)}")
         return None
 
@@ -169,9 +177,6 @@ def highlight_repeating_numbers(val):
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
     
-    # Add a loading state container at the top
-    status_container = st.empty()
-
     # Create sidebar for filters
     st.sidebar.header("Zodiac Calculator")
     
@@ -203,40 +208,38 @@ def main():
     current_year = datetime.now().year
     selected_year = st.sidebar.selectbox(
         "Select Year",
-        range(current_year, 1999, -1),
+        range(current_year, 2012, -1),  # nfl_data_py has reliable data from 2012 onwards
         index=0
     )
 
-    # Fetch data with status updates
-    status_container.info("Loading NFL player data...")
-    data = fetch_nfl_data(selected_year)
-    
-    if data is not None:
-        status_container.success("Data loaded successfully!")
-        df = process_player_data(data)
-        if df is None:
-            status_container.error("Error processing player data")
+    # Fetch data with progress indicator
+    with st.spinner("Loading NFL player data..."):
+        data = fetch_nfl_data(selected_year)
+        
+        if data is None:
+            st.error("Failed to fetch NFL data. Please try again later.")
             st.stop()
-    else:
-        status_container.error("Failed to fetch data")
-        st.stop()
+        
+        df = process_player_data(data)
+        
+        if df is None or df.empty:
+            st.error("No player data available for the selected year.")
+            st.stop()
     
     # Get unique teams and positions
-    unique_teams = df['Team'].unique()
-    unique_positions = df['Position'].unique()
-    valid_teams = sorted([team for team in unique_teams if team])
-    valid_positions = sorted([pos for pos in unique_positions if pos])
+    unique_teams = sorted(df['Team'].unique())
+    unique_positions = sorted(df['Position'].unique())
     
     # Team filter in sidebar
     selected_team = st.sidebar.selectbox(
         "Select Team",
-        ["All Teams"] + valid_teams
+        ["All Teams"] + list(unique_teams)
     )
     
     # Position filter in sidebar
     selected_position = st.sidebar.selectbox(
         "Select Position",
-        ["All Positions"] + valid_positions
+        ["All Positions"] + list(unique_positions)
     )
 
     # Filter based on selections
