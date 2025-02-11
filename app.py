@@ -2,12 +2,6 @@ import streamlit as st
 import pandas as pd
 import nfl_data_py as nfl
 from datetime import datetime, date
-import requests.exceptions
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
@@ -40,8 +34,7 @@ def get_zodiac_sign(birth_date):
             if date_num <= cutoff:
                 return sign
         return 'Capricorn'
-    except Exception as e:
-        logger.error(f"Error calculating zodiac sign: {e}")
+    except:
         return None
 
 def get_compatible_signs(zodiac):
@@ -62,117 +55,29 @@ def get_compatible_signs(zodiac):
     }
     return compatibility.get(zodiac, [])
 
-@st.cache_data(ttl=3600)
-def fetch_nfl_data(year=None):
-    """Fetch NFL player data using nfl_data_py"""
-    if year is None:
-        year = datetime.now().year
-    
+@st.cache_data(show_spinner=False)
+def load_nfl_data(year):
+    """Load NFL roster data for a given year"""
     try:
-        # Try to fetch weekly roster data first
-        logger.info(f"Fetching weekly roster data for year {year}")
-        df = nfl.import_weekly_rosters([year])
-        
-        if df is None or df.empty:
-            logger.info(f"Weekly roster empty, trying seasonal roster for year {year}")
-            # If weekly roster is empty, try seasonal roster
-            df = nfl.import_seasonal_rosters([year])
-        
-        if df is None or df.empty:
-            logger.error(f"No data available for year {year}")
+        # Load roster data
+        rosters = nfl.import_rosters([year])
+        if rosters is None or len(rosters) == 0:
             return None
-        
-        # Take the most recent roster entry for each player
-        df = df.sort_values('week', ascending=False).groupby(['player_id', 'season']).first().reset_index()
-        
-        # Clean the data
-        df = nfl.clean_nfl_data(df)
-        logger.info(f"Successfully fetched data with {len(df)} players")
-        return df
-        
+        return rosters
     except Exception as e:
-        logger.error(f"Error fetching NFL data: {str(e)}")
+        st.error(f"Error loading data: {str(e)}")
         return None
 
 def calculate_age(birth_date):
-    """Calculate age from birth date, handling invalid dates"""
+    """Calculate age from birth date"""
+    if pd.isna(birth_date):
+        return None
     try:
-        if pd.isna(birth_date):
-            return None
         birth_date = pd.to_datetime(birth_date)
         today = pd.Timestamp.now()
-        age = (today - birth_date).days / 365.25
-        return int(age)
-    except Exception as e:
-        logger.error(f"Error calculating age: {e}")
+        return int((today - birth_date).days / 365.25)
+    except:
         return None
-
-def process_player_data(df):
-    """Process the NFL data and add additional columns"""
-    if df is None:
-        return None
-    
-    try:
-        # Select and rename columns
-        columns = {
-            'team': 'Team',
-            'position': 'Position',
-            'jersey_number': 'Number',
-            'player_name': 'Player Name',
-            'height': 'Height',
-            'weight': 'Weight',
-            'birth_date': 'Birth Date',
-            'college': 'College'
-        }
-        
-        # Create new dataframe with selected columns
-        result_df = pd.DataFrame()
-        for api_col, display_col in columns.items():
-            if api_col in df.columns:
-                result_df[display_col] = df[api_col]
-            else:
-                logger.warning(f"Column '{api_col}' not found in data")
-                result_df[display_col] = None
-        
-        # Format birth date and calculate age
-        if 'Birth Date' in result_df.columns:
-            result_df['Birth Date'] = pd.to_datetime(result_df['Birth Date'])
-            result_df['Age'] = result_df['Birth Date'].apply(calculate_age)
-            # Add zodiac sign right after birth date
-            result_df['Zodiac'] = result_df['Birth Date'].apply(get_zodiac_sign)
-            # Format birth date for display
-            result_df['Birth Date'] = result_df['Birth Date'].dt.strftime('%Y-%m-%d')
-        
-        # Fill any NA values
-        result_df['Team'] = result_df['Team'].fillna('Free Agent')
-        result_df['Position'] = result_df['Position'].fillna('Unknown')
-        
-        # Split player name into first and last name
-        if 'Player Name' in result_df.columns:
-            result_df[['First Name', 'Last Name']] = result_df['Player Name'].str.split(' ', n=1, expand=True)
-            result_df = result_df.drop('Player Name', axis=1)
-        
-        # Reorder columns
-        desired_order = ['First Name', 'Last Name', 'Team', 'Position', 'Number', 'Birth Date', 
-                        'Zodiac', 'Age', 'Height', 'Weight', 'College']
-        result_df = result_df.reindex(columns=[col for col in desired_order if col in result_df.columns])
-        
-        return result_df
-    except Exception as e:
-        logger.error(f"Error processing player data: {e}")
-        st.error(f"Error processing player data: {str(e)}")
-        return None
-
-def highlight_compatible_signs(val, compatible_signs):
-    """Return CSS style if zodiac sign is compatible"""
-    return 'background-color: yellow' if val in compatible_signs else ''
-
-def highlight_repeating_numbers(val):
-    """Return CSS style if number is repeating"""
-    if pd.isna(val) or not isinstance(val, (int, float)):
-        return ''
-    num_str = str(int(val))
-    return 'background-color: green' if len(num_str) > 1 and len(set(num_str)) == 1 else ''
 
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
@@ -197,7 +102,7 @@ def main():
     st.sidebar.write("Most Compatible Signs:")
     for sign in compatible_signs:
         st.sidebar.write(f"- {sign}")
-        
+    
     # Add toggle for compatibility filter
     show_compatible = st.sidebar.checkbox("Show only compatible players", value=False)
 
@@ -208,24 +113,40 @@ def main():
     current_year = datetime.now().year
     selected_year = st.sidebar.selectbox(
         "Select Year",
-        range(current_year, 2012, -1),  # nfl_data_py has reliable data from 2012 onwards
+        range(current_year, 2012, -1),
         index=0
     )
 
-    # Fetch data with progress indicator
+    # Load data
     with st.spinner("Loading NFL player data..."):
-        data = fetch_nfl_data(selected_year)
+        df = load_nfl_data(selected_year)
         
-        if data is None:
-            st.error("Failed to fetch NFL data. Please try again later.")
+        if df is None:
+            st.error("Could not load NFL data. Please try again later.")
             st.stop()
         
-        df = process_player_data(data)
+        # Basic data processing
+        df['Birth Date'] = pd.to_datetime(df['birth_date'])
+        df['Age'] = df['Birth Date'].apply(calculate_age)
+        df['Zodiac'] = df['Birth Date'].apply(get_zodiac_sign)
         
-        if df is None or df.empty:
-            st.error("No player data available for the selected year.")
-            st.stop()
-    
+        # Rename columns
+        df = df.rename(columns={
+            'team': 'Team',
+            'position': 'Position',
+            'jersey_number': 'Number',
+            'first_name': 'First Name',
+            'last_name': 'Last Name',
+            'height': 'Height',
+            'weight': 'Weight',
+            'college': 'College'
+        })
+        
+        # Select and reorder columns
+        columns = ['First Name', 'Last Name', 'Team', 'Position', 'Number', 
+                  'Birth Date', 'Zodiac', 'Age', 'Height', 'Weight', 'College']
+        df = df[[col for col in columns if col in df.columns]]
+
     # Get unique teams and positions
     unique_teams = sorted(df['Team'].unique())
     unique_positions = sorted(df['Position'].unique())
@@ -242,25 +163,20 @@ def main():
         ["All Positions"] + list(unique_positions)
     )
 
-    # Filter based on selections
+    # Filter data
     filtered_df = df.copy()
 
-    # Apply zodiac compatibility filter
     if show_compatible:
         filtered_df = filtered_df[filtered_df['Zodiac'].isin(compatible_signs)]
 
-    # Apply team filter
     if selected_team != "All Teams":
         filtered_df = filtered_df[filtered_df['Team'] == selected_team]
     
-    # Apply position filter
     if selected_position != "All Positions":
         filtered_df = filtered_df[filtered_df['Position'] == selected_position]
 
-    # Add search functionality
+    # Search functionality
     search = st.text_input("Search players", "")
-    
-    # Apply search filter
     if search:
         search_lower = search.lower()
         mask = (
@@ -272,17 +188,18 @@ def main():
         filtered_df = filtered_df[mask]
 
     # Display metrics
-    if show_compatible:
-        st.write(f"Showing {len(filtered_df)} compatible players")
-    else:
-        st.write(f"Showing {len(filtered_df)} players")
+    st.write(f"Showing {len(filtered_df)} players")
 
-    # Apply styling
+    # Style the dataframe
     styled_df = filtered_df.style\
-        .applymap(lambda x: highlight_compatible_signs(x, compatible_signs), subset=['Zodiac'])\
-        .applymap(highlight_repeating_numbers, subset=['Number'])
+        .applymap(lambda x: 'background-color: yellow' if x in compatible_signs else '', 
+                 subset=['Zodiac'])\
+        .applymap(lambda x: 'background-color: green' 
+                 if pd.notnull(x) and isinstance(x, (int, float)) and 
+                 len(str(int(x))) > 1 and len(set(str(int(x)))) == 1 
+                 else '', subset=['Number'])
 
-    # Display the styled dataframe
+    # Display the dataframe
     st.dataframe(
         styled_df,
         hide_index=True,
@@ -298,6 +215,10 @@ def main():
             "Age": st.column_config.NumberColumn(
                 "Age",
                 format="%d"
+            ),
+            "Birth Date": st.column_config.DateColumn(
+                "Birth Date",
+                format="YYYY-MM-DD"
             )
         }
     )
