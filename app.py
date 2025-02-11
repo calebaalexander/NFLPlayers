@@ -3,6 +3,37 @@ import pandas as pd
 import nfl_data_py as nfl
 from datetime import datetime, date
 
+# Constants
+ZODIAC_SYMBOLS = {
+    'Aries': '♈',
+    'Taurus': '♉',
+    'Gemini': '♊',
+    'Cancer': '♋',
+    'Leo': '♌',
+    'Virgo': '♍',
+    'Libra': '♎',
+    'Scorpio': '♏',
+    'Sagittarius': '♐',
+    'Capricorn': '♑',
+    'Aquarius': '♒',
+    'Pisces': '♓'
+}
+
+ZODIAC_TRAITS = {
+    'Aries': 'Confident, competitive, natural leader',
+    'Taurus': 'Reliable, patient, determined',
+    'Gemini': 'Adaptable, versatile, quick learner',
+    'Cancer': 'Protective, intuitive, team-oriented',
+    'Leo': 'Charismatic, confident, born leader',
+    'Virgo': 'Detail-oriented, analytical, hardworking',
+    'Libra': 'Balanced, diplomatic, fair',
+    'Scorpio': 'Intense, strategic, powerful',
+    'Sagittarius': 'Optimistic, adventurous, independent',
+    'Capricorn': 'Disciplined, responsible, manager',
+    'Aquarius': 'Innovative, progressive, original',
+    'Pisces': 'Intuitive, empathetic, adaptable'
+}
+
 # Helper functions
 def format_height(height_str):
     """Convert height from inches to feet and inches format"""
