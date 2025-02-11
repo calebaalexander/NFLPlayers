@@ -324,10 +324,22 @@ def main():
     tab1, tab2 = st.tabs(["Player Roster", "Position Zodiac Analysis"])
     
     with tab1:
-        # Birthday matches section
-        st.subheader("Birthday Matches")
-        user_birthday = user_date.strftime('%m-%d')
-        
+        # Display roster first
+        st.subheader("Player Roster")
+        st.dataframe(
+            filtered_df,
+            column_config={
+                "Zodiac": st.column_config.Column(
+                    "Zodiac",
+                    help="Hover for zodiac traits"
+                ),
+                "Number": st.column_config.NumberColumn(
+                    "Number",
+                    format="%d"
+                ),
+                "Birth Date": st.column_config.TextColumn(
+                    "Birth Date"
+                ),
         # Convert Birth Date back to datetime for comparison
         df['Temp Date'] = pd.to_datetime(df['Birth Date'])
         birthday_matches = df[df['Temp Date'].dt.strftime('%m-%d') == user_birthday]
@@ -348,9 +360,9 @@ def main():
         else:
             st.write("No players share your birthday.")
         
-        # Display roster
-        st.subheader("Player Roster")
-        st.dataframe(
+        # Birthday matches section below
+        st.subheader("Birthday Matches")
+        user_birthday = user_date.strftime('%m-%d')
             filtered_df,
             column_config={
                 "Zodiac": st.column_config.Column(
