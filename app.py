@@ -131,23 +131,22 @@ def get_position_zodiac_distribution(df):
 # Data loading and processing
 @st.cache_data
 def load_nfl_data(year):
+  @st.cache_data(ttl=3600)  # Cache for 1 hour
+def load_nfl_data(year):
     """Load NFL roster data for a given year"""
     try:
-        # Request roster data
         df = pd.DataFrame()
-        
         try:
-            # Try to get seasonal roster data
-            df = nfl.import_weekly_rosters([year])
-            if df is not None and not df.empty:
-                df = df.sort_values('week', ascending=False).groupby('player_id').first().reset_index()
+            # Try regular roster import first as it's faster
+            df = nfl.import_rosters([year])
+            if df is None or df.empty:
+                # Fallback to weekly rosters if needed
+                df = nfl.import_weekly_rosters([year])
+                if df is not None and not df.empty:
+                    df = df.sort_values('week', ascending=False).groupby('player_id').first().reset_index()
         except Exception as e:
-            st.warning(f"Could not load weekly roster data, trying regular roster data...")
-            try:
-                df = nfl.import_rosters([year])
-            except Exception as e:
-                st.error(f"Could not retrieve roster data: {str(e)}")
-                return None
+            st.error(f"Could not retrieve roster data: {str(e)}")
+            return None
         
         if df is None or df.empty:
             st.error(f"No data available for year {year}")
@@ -158,6 +157,8 @@ def load_nfl_data(year):
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         return None
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def process_dataframe(df):
     """Process the dataframe to ensure consistent column names and formats"""
     try:
@@ -165,7 +166,7 @@ def process_dataframe(df):
         processed_df = df.copy()
         
         # Remove unnecessary columns
-        columns_to_drop = ['player_id', '']  # Add any other columns to drop
+        columns_to_drop = ['player_id', 'status', 'full_name', 'entry_year', 'rookie_year', 'depth_chart_position']
         processed_df = processed_df.drop(columns=columns_to_drop, errors='ignore')
         
         # Format season without comma
@@ -187,7 +188,7 @@ def process_dataframe(df):
         # Rename columns that exist in the dataframe
         processed_df = processed_df.rename(columns={k: v for k, v in column_mappings.items() if k in processed_df.columns})
         
-        # Process dates
+        # Process only necessary columns
         if 'birth_date' in processed_df.columns:
             processed_df['Birth Date'] = pd.to_datetime(processed_df['birth_date'])
         elif 'Birth Date' in processed_df.columns:
@@ -220,6 +221,17 @@ def process_dataframe(df):
     except Exception as e:
         st.error(f"Error processing data: {str(e)}")
         return None
+# Load and process data
+    with st.spinner('Loading NFL player data... (this may take a few moments on first load)'):
+        raw_df = load_nfl_data(selected_year)
+        if raw_df is None:
+            st.error("Could not load NFL data. Please try a different year.")
+            st.stop()
+            
+        df = process_dataframe(raw_df)
+        if df is None:
+            st.error("Could not process NFL data.")
+            st.stop()
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
     
