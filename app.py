@@ -97,6 +97,7 @@ def get_position_zodiac_distribution(df):
     except:
         return pd.DataFrame(columns=['Position', 'Zodiac'])
         # Data loading and processing
+# Data loading and processing
 @st.cache_data
 def load_nfl_data(year):
     """Load NFL roster data for a given year"""
@@ -133,6 +134,14 @@ def process_dataframe(df):
         # Create a copy to avoid modifying the original
         processed_df = df.copy()
         
+        # Remove unnecessary columns
+        columns_to_drop = ['player_id', '']  # Add any other columns to drop
+        processed_df = processed_df.drop(columns=columns_to_drop, errors='ignore')
+        
+        # Format season without comma
+        if 'season' in processed_df.columns:
+            processed_df['season'] = processed_df['season'].astype(str).str.replace(',', '')
+        
         # Standardize column names
         column_mappings = {
             'jersey_number': 'Number',
@@ -140,7 +149,9 @@ def process_dataframe(df):
             'team': 'Team',
             'height': 'Height',
             'weight': 'Weight',
-            'birth_date': 'Birth Date'
+            'birth_date': 'Birth Date',
+            'player_name': 'Name',
+            'season': 'Season'
         }
         
         # Rename columns that exist in the dataframe
@@ -324,8 +335,12 @@ def main():
     with tab1:
         # Display roster first
         st.subheader("Player Roster")
+        # Select and reorder columns for display
+        display_columns = ['Name', 'Season', 'Team', 'Position', 'Number', 'Birth Date', 'Height', 'Zodiac']
+        display_df = filtered_df[display_columns]
+        
         st.dataframe(
-            filtered_df,
+            display_df,
             column_config={
                 "Zodiac": st.column_config.Column(
                     "Zodiac",
@@ -340,6 +355,10 @@ def main():
                 ),
                 "Height": st.column_config.TextColumn(
                     "Height"
+                ),
+                "Season": st.column_config.NumberColumn(
+                    "Season",
+                    format="%d"
                 )
             }
         )
