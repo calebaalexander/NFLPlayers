@@ -3,23 +3,119 @@ import pandas as pd
 import nfl_data_py as nfl
 from datetime import datetime, date
 
-# [Previous constant definitions for ZODIAC_SYMBOLS and ZODIAC_TRAITS remain the same...]
+# Helper functions first
+def format_height(height_str):
+    """Convert height from inches to feet and inches format"""
+    if pd.isna(height_str):
+        return None
+    try:
+        height_inches = int(float(height_str))
+        feet = height_inches // 12
+        inches = height_inches % 12
+        return f"{feet}' {inches}\""
+    except:
+        return str(height_str)
 
+def format_date(date_obj):
+    """Format date as YYYY/MM/DD"""
+    if pd.isna(date_obj):
+        return None
+    try:
+        return pd.to_datetime(date_obj).strftime('%Y/%m/%d')
+    except:
+        return str(date_obj)
+
+def is_angel_number(number):
+    """Check if a number is an angel number (all digits the same)"""
+    if pd.isna(number):
+        return False
+    try:
+        number_str = str(int(number))
+        return len(number_str) > 1 and len(set(number_str)) == 1
+    except:
+        return False
+
+# Zodiac-related functions
+def get_zodiac_sign(birth_date):
+    """Calculate zodiac sign from birth date"""
+    try:
+        if isinstance(birth_date, str):
+            birth_date = pd.to_datetime(birth_date)
+        
+        month = birth_date.month
+        day = birth_date.day
+        
+        zodiac_dates = [
+            (120, 'Capricorn'),   # Dec 22 - Jan 19
+            (219, 'Aquarius'),    # Jan 20 - Feb 18
+            (320, 'Pisces'),      # Feb 19 - Mar 20
+            (420, 'Aries'),       # Mar 21 - Apr 19
+            (521, 'Taurus'),      # Apr 20 - May 20
+            (621, 'Gemini'),      # May 21 - Jun 20
+            (723, 'Cancer'),      # Jun 21 - Jul 22
+            (823, 'Leo'),         # Jul 23 - Aug 22
+            (923, 'Virgo'),       # Aug 23 - Sep 22
+            (1023, 'Libra'),      # Sep 23 - Oct 22
+            (1122, 'Scorpio'),    # Oct 23 - Nov 21
+            (1222, 'Sagittarius'),# Nov 22 - Dec 21
+            (1232, 'Capricorn')   # Dec 22 - Dec 31
+        ]
+        
+        date_num = month * 100 + day
+        
+        for cutoff, sign in zodiac_dates:
+            if date_num <= cutoff:
+                return sign
+        return 'Capricorn'
+    except:
+        return None
+
+def get_compatible_signs(zodiac):
+    """Return most compatible zodiac signs"""
+    compatibility = {
+        'Aries': ['Leo', 'Sagittarius', 'Gemini'],
+        'Taurus': ['Virgo', 'Capricorn', 'Cancer'],
+        'Gemini': ['Libra', 'Aquarius', 'Aries'],
+        'Cancer': ['Scorpio', 'Pisces', 'Taurus'],
+        'Leo': ['Aries', 'Sagittarius', 'Gemini'],
+        'Virgo': ['Taurus', 'Capricorn', 'Cancer'],
+        'Libra': ['Gemini', 'Aquarius', 'Leo'],
+        'Scorpio': ['Cancer', 'Pisces', 'Virgo'],
+        'Sagittarius': ['Aries', 'Leo', 'Libra'],
+        'Capricorn': ['Taurus', 'Virgo', 'Pisces'],
+        'Aquarius': ['Gemini', 'Libra', 'Sagittarius'],
+        'Pisces': ['Cancer', 'Scorpio', 'Capricorn']
+    }
+    return compatibility.get(zodiac, [])
+
+def get_position_zodiac_distribution(df):
+    """Calculate most common zodiac sign for each position"""
+    try:
+        return df.groupby('Position')['Zodiac'].agg(
+            lambda x: x.value_counts().index[0] if len(x) > 0 else None
+        ).reset_index()
+    except:
+        return pd.DataFrame(columns=['Position', 'Zodiac'])
+
+# Data loading and processing
 @st.cache_data
 def load_nfl_data(year):
     """Load NFL roster data for a given year"""
     try:
+        # Request roster data
         df = pd.DataFrame()
         
         try:
+            # Try to get seasonal roster data
             df = nfl.import_weekly_rosters([year])
             if df is not None and not df.empty:
                 df = df.sort_values('week', ascending=False).groupby('player_id').first().reset_index()
-        except:
+        except Exception as e:
+            st.warning(f"Could not load weekly roster data, trying regular roster data...")
             try:
                 df = nfl.import_rosters([year])
-            except:
-                st.error("Could not retrieve roster data")
+            except Exception as e:
+                st.error(f"Could not retrieve roster data: {str(e)}")
                 return None
         
         if df is None or df.empty:
@@ -31,8 +127,6 @@ def load_nfl_data(year):
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         return None
-
-# [Previous helper functions remain the same...]
 
 def process_dataframe(df):
     """Process the dataframe to ensure consistent column names and formats"""
@@ -53,9 +147,11 @@ def process_dataframe(df):
         # Rename columns that exist in the dataframe
         processed_df = processed_df.rename(columns={k: v for k, v in column_mappings.items() if k in processed_df.columns})
         
-        # Process birth date
+        # Process dates
         if 'birth_date' in processed_df.columns:
             processed_df['Birth Date'] = pd.to_datetime(processed_df['birth_date'])
+        elif 'Birth Date' in processed_df.columns:
+            processed_df['Birth Date'] = pd.to_datetime(processed_df['Birth Date'])
         
         # Process player name
         if 'player_name' in processed_df.columns:
@@ -64,7 +160,9 @@ def process_dataframe(df):
             processed_df[['First Name', 'Last Name']] = processed_df['full_name'].str.split(' ', n=1, expand=True)
         
         # Format height
-        if 'Height' in processed_df.columns:
+        if 'height' in processed_df.columns:
+            processed_df['Height'] = processed_df['height'].apply(format_height)
+        elif 'Height' in processed_df.columns:
             processed_df['Height'] = processed_df['Height'].apply(format_height)
         
         # Ensure Number column is numeric
@@ -83,6 +181,37 @@ def process_dataframe(df):
         st.error(f"Error processing data: {str(e)}")
         return None
 
+# Constants
+ZODIAC_SYMBOLS = {
+    'Aries': '♈',
+    'Taurus': '♉',
+    'Gemini': '♊',
+    'Cancer': '♋',
+    'Leo': '♌',
+    'Virgo': '♍',
+    'Libra': '♎',
+    'Scorpio': '♏',
+    'Sagittarius': '♐',
+    'Capricorn': '♑',
+    'Aquarius': '♒',
+    'Pisces': '♓'
+}
+
+ZODIAC_TRAITS = {
+    'Aries': 'Confident, competitive, natural leader',
+    'Taurus': 'Reliable, patient, determined',
+    'Gemini': 'Adaptable, versatile, quick learner',
+    'Cancer': 'Protective, intuitive, team-oriented',
+    'Leo': 'Charismatic, confident, born leader',
+    'Virgo': 'Detail-oriented, analytical, hardworking',
+    'Libra': 'Balanced, diplomatic, fair',
+    'Scorpio': 'Intense, strategic, powerful',
+    'Sagittarius': 'Optimistic, adventurous, independent',
+    'Capricorn': 'Disciplined, responsible, manager',
+    'Aquarius': 'Innovative, progressive, original',
+    'Pisces': 'Intuitive, empathetic, adaptable'
+}
+
 def main():
     st.title("NFL Players Roster: Zodiac Edition")
     
@@ -97,12 +226,12 @@ def main():
         format="YYYY/MM/DD"
     )
     
-    # Lucky number input (starting with 13)
+    # Lucky number input
     user_number = st.sidebar.number_input(
         "Enter your Lucky Number",
         min_value=0,
         max_value=99,
-        value=13  # Changed to 13
+        value=13
     )
     
     # Year selection
@@ -136,6 +265,31 @@ def main():
     st.sidebar.write("Most Compatible Signs:")
     for sign in compatible_signs:
         st.sidebar.write(f"{ZODIAC_SYMBOLS.get(sign, '')} {sign}")
+
+    # Show search box and filters above the tabs
+    search = st.text_input("Search players", "")
+    
+    # Filters
+    show_compatible = st.checkbox("Show only compatible players", value=True)
+    show_angel = st.checkbox("Show only Angel numbers", value=False)
+
+    # Apply filters
+    filtered_df = df.copy()
+    
+    if show_compatible:
+        filtered_df = filtered_df[filtered_df['Zodiac'].isin(compatible_signs)]
+    if show_angel:
+        filtered_df = filtered_df[filtered_df['Number'].apply(is_angel_number)]
+    
+    if search:
+        search_lower = search.lower()
+        mask = (
+            filtered_df['First Name'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Last Name'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Team'].str.lower().str.contains(search_lower, na=False) |
+            filtered_df['Position'].str.lower().str.contains(search_lower, na=False)
+        )
+        filtered_df = filtered_df[mask]
     
     # Tabs for different views
     tab1, tab2 = st.tabs(["Player Roster", "Position Zodiac Analysis"])
@@ -146,38 +300,24 @@ def main():
         user_birthday = user_date.strftime('%m-%d')
         
         # Convert Birth Date back to datetime for comparison
-        df['Birth Date'] = pd.to_datetime(df['Birth Date'])
-        birthday_matches = df[df['Birth Date'].dt.strftime('%m-%d') == user_birthday]
+        df['Temp Date'] = pd.to_datetime(df['Birth Date'])
+        birthday_matches = df[df['Temp Date'].dt.strftime('%m-%d') == user_birthday]
         
         if not birthday_matches.empty:
-            birthday_matches = birthday_matches.sort_values('Birth Date', ascending=False)
+            birthday_matches = birthday_matches.sort_values('Temp Date', ascending=False)
             for _, player in birthday_matches.iterrows():
-                exact_match = player['Birth Date'].date() == user_date
-                player_text = f"{player['First Name']} {player['Last Name']} ({format_date(player['Birth Date'])})"
+                exact_match = player['Temp Date'].date() == user_date
+                player_text = f"{player['First Name']} {player['Last Name']} ({player['Birth Date']})"
                 
                 if exact_match:
                     st.markdown(f"**:gold[{player_text}]**")
                 else:
                     st.write(player_text)
                 
-                if 'Number' in player and pd.notna(player['Number']) and int(player['Number']) == user_number:
+                if pd.notna(player['Number']) and int(player['Number']) == user_number:
                     st.write(f"🎯 Matching lucky number: {user_number}!")
         else:
             st.write("No players share your birthday.")
-        
-        # Convert Birth Date back to string for display
-        df['Birth Date'] = df['Birth Date'].apply(format_date)
-        
-        # Filters
-        show_compatible = st.sidebar.checkbox("Show only compatible players", value=True)
-        show_angel = st.sidebar.checkbox("Show only Angel numbers", value=False)
-        
-        # Filter data
-        filtered_df = df.copy()
-        if show_compatible:
-            filtered_df = filtered_df[filtered_df['Zodiac'].isin(compatible_signs)]
-        if show_angel:
-            filtered_df = filtered_df[filtered_df['Number'].apply(is_angel_number)]
         
         # Display roster
         st.subheader("Player Roster")
@@ -186,16 +326,17 @@ def main():
             column_config={
                 "Zodiac": st.column_config.Column(
                     "Zodiac",
-                    help="Hover for zodiac traits",
-                    width="medium"
+                    help="Hover for zodiac traits"
                 ),
                 "Number": st.column_config.NumberColumn(
                     "Number",
                     format="%d"
                 ),
                 "Birth Date": st.column_config.TextColumn(
-                    "Birth Date",
-                    width="medium"
+                    "Birth Date"
+                ),
+                "Height": st.column_config.TextColumn(
+                    "Height"
                 )
             }
         )
