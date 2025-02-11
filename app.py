@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import pandas as pd
 import requests
@@ -11,31 +12,25 @@ API_URL = "https://api.sportsdata.io/v3/nfl/scores/json/PlayersByAvailable"
 def parse_quota_message(response):
     """Extract time remaining from quota message"""
     try:
-        # Try to get error details from response
         if hasattr(response, 'json'):
             error_data = response.json()
             message = error_data.get('message', '')
             
-            # Check for various time formats in the message
-            # Try dd:hh:mm:ss format
             time_match = re.search(r"(\d+):(\d+):(\d+):(\d+)", message)
             if time_match:
                 days, hours, mins, secs = map(int, time_match.groups())
                 return f"{days}d {hours}h {mins}m {secs}s"
             
-            # Try "in X hours" format
             hours_match = re.search(r"in (\d+) hours?", message)
             if hours_match:
                 hours = int(hours_match.group(1))
                 return f"{hours} hours"
             
-            # Try "in X minutes" format
             mins_match = re.search(r"in (\d+) minutes?", message)
             if mins_match:
                 mins = int(mins_match.group(1))
                 return f"{mins} minutes"
                 
-            # If we have a message but couldn't parse time
             if message:
                 return message
     except:
@@ -73,12 +68,11 @@ def process_nfl_data(data):
     try:
         df = pd.DataFrame(data)
         
-        # Rename columns for better display
         column_mapping = {
             'TeamID': 'Team ID',
             'Team': 'Team',
             'Number': 'Jersey Number',
-            'FirstName': 'First Name',
+            'FirstName': 'First Name', 
             'LastName': 'Last Name',
             'Position': 'Position',
             'Status': 'Status',
@@ -90,23 +84,19 @@ def process_nfl_data(data):
             'PhotoUrl': 'Photo URL'
         }
         
-        # Rename only existing columns
         for old_col, new_col in column_mapping.items():
             if old_col in df.columns:
                 df = df.rename(columns={old_col: new_col})
         
-        # Convert birth dates
         if 'Birth Date' in df.columns:
             df['Birth Date'] = pd.to_datetime(df['Birth Date']).dt.date
             df['Age'] = (pd.Timestamp.now().date() - df['Birth Date']).astype('<m8[Y]')
         
-        # Format height and weight
         if 'Height' in df.columns:
             df['Height'] = df['Height'].apply(lambda x: f"{x // 12}'{x % 12}\"" if pd.notnull(x) else 'Unknown')
         if 'Weight' in df.columns:
             df['Weight'] = df['Weight'].apply(lambda x: f"{int(x)} lbs" if pd.notnull(x) else 'Unknown')
         
-        # Fill missing values
         df = df.fillna('Unknown')
         
         return df
@@ -125,19 +115,19 @@ def get_zodiac_sign(birth_date):
         day = birth_date.day
         
         zodiac_dates = [
-            (120, 'Capricorn'),   # Dec 22 - Jan 19
-            (219, 'Aquarius'),    # Jan 20 - Feb 18
-            (320, 'Pisces'),      # Feb 19 - Mar 20
-            (420, 'Aries'),       # Mar 21 - Apr 19
-            (521, 'Taurus'),      # Apr 20 - May 20
-            (621, 'Gemini'),      # May 21 - Jun 20
-            (723, 'Cancer'),      # Jun 21 - Jul 22
-            (823, 'Leo'),         # Jul 23 - Aug 22
-            (923, 'Virgo'),       # Aug 23 - Sep 22
-            (1023, 'Libra'),      # Sep 23 - Oct 22
-            (1122, 'Scorpio'),    # Oct 23 - Nov 21
-            (1222, 'Sagittarius'),# Nov 22 - Dec 21
-            (1232, 'Capricorn')   # Dec 22 - Dec 31
+            (120, 'Capricorn'),   
+            (219, 'Aquarius'),    
+            (320, 'Pisces'),      
+            (420, 'Aries'),       
+            (521, 'Taurus'),      
+            (621, 'Gemini'),      
+            (723, 'Cancer'),      
+            (823, 'Leo'),         
+            (923, 'Virgo'),       
+            (1023, 'Libra'),      
+            (1122, 'Scorpio'),    
+            (1222, 'Sagittarius'),
+            (1232, 'Capricorn')   
         ]
         
         date_num = month * 100 + day
@@ -171,16 +161,13 @@ def main():
     st.set_page_config(page_title="NFL Teams Explorer", page_icon="🏈", layout="wide")
     st.title("🏈 NFL Teams Explorer")
     
-    # Create tabs
     tab1, tab2 = st.tabs(["NFL Players", "Zodiac Calculator"])
     
     with tab1:
-        # Add refresh button
         if st.button("🔄 Refresh Data", key="refresh_btn"):
             st.cache_data.clear()
             st.experimental_rerun()
             
-        # Fetch NFL data
         with st.spinner("Loading NFL player data..."):
             data = get_nfl_data()
             
@@ -188,16 +175,12 @@ def main():
                 df = process_nfl_data(data)
                 
                 if not df.empty:
-                    # Create layout
                     col1, col2 = st.columns([1, 3])
                     
                     with col1:
                         st.subheader("Filters")
-                        
-                        # Search box
                         search = st.text_input("Search players", placeholder="Name, team, or college...")
                         
-                        # Dynamic filters
                         filter_columns = ['Team', 'Position', 'Status', 'College']
                         filters = {}
                         
@@ -207,14 +190,12 @@ def main():
                                 filters[col] = st.selectbox(f'Filter by {col}', values)
                     
                     with col2:
-                        # Apply filters
                         filtered_df = df.copy()
                         
                         for col, value in filters.items():
                             if value != 'All':
                                 filtered_df = filtered_df[filtered_df[col] == value]
                         
-                        # Apply search
                         if search:
                             search_lower = search.lower()
                             mask = filtered_df.astype(str).apply(
@@ -222,11 +203,9 @@ def main():
                             ).any(axis=1)
                             filtered_df = filtered_df[mask]
                         
-                        # Display results
                         st.write(f"Showing {len(filtered_df)} players")
                         st.dataframe(filtered_df)
                         
-                        # Export functionality
                         if st.button("Export to CSV"):
                             csv = filtered_df.to_csv(index=False)
                             st.download_button(
@@ -239,7 +218,6 @@ def main():
     with tab2:
         st.subheader("Zodiac Sign Calculator")
         
-        # Date input
         default_date = date(1988, 1, 1)
         birth_date = st.date_input(
             "Enter birth date",
@@ -281,3 +259,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
