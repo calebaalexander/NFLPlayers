@@ -55,15 +55,22 @@ def get_compatible_signs(zodiac):
     }
     return compatibility.get(zodiac, [])
 
-@st.cache_data(show_spinner=False)
+@st.cache_data
 def load_nfl_data(year):
     """Load NFL roster data for a given year"""
     try:
-        # Load roster data
-        rosters = nfl.import_rosters([year])
-        if rosters is None or len(rosters) == 0:
+        # Request specific columns we need
+        columns = ['player_name', 'team', 'position', 'jersey_number', 
+                  'birth_date', 'height', 'weight', 'college']
+        
+        df = nfl.import_seasonal_rosters([year], columns)
+        if df is None or len(df) == 0:
             return None
-        return rosters
+            
+        # Clean the data using nfl's built-in cleaner
+        df = nfl.clean_nfl_data(df)
+        return df
+        
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         return None
@@ -113,30 +120,31 @@ def main():
     current_year = datetime.now().year
     selected_year = st.sidebar.selectbox(
         "Select Year",
-        range(current_year, 2012, -1),
+        range(current_year, 1999, -1),
         index=0
     )
 
-    # Load data
+    # Load data with progress indicator
     with st.spinner("Loading NFL player data..."):
         df = load_nfl_data(selected_year)
         
         if df is None:
-            st.error("Could not load NFL data. Please try again later.")
+            st.error("Could not load NFL data. Please try a different year.")
             st.stop()
         
-        # Basic data processing
+        # Process the data
         df['Birth Date'] = pd.to_datetime(df['birth_date'])
         df['Age'] = df['Birth Date'].apply(calculate_age)
         df['Zodiac'] = df['Birth Date'].apply(get_zodiac_sign)
+        
+        # Split player name into first and last name
+        df[['First Name', 'Last Name']] = df['player_name'].str.split(' ', n=1, expand=True)
         
         # Rename columns
         df = df.rename(columns={
             'team': 'Team',
             'position': 'Position',
             'jersey_number': 'Number',
-            'first_name': 'First Name',
-            'last_name': 'Last Name',
             'height': 'Height',
             'weight': 'Weight',
             'college': 'College'
@@ -148,8 +156,8 @@ def main():
         df = df[[col for col in columns if col in df.columns]]
 
     # Get unique teams and positions
-    unique_teams = sorted(df['Team'].unique())
-    unique_positions = sorted(df['Position'].unique())
+    unique_teams = sorted(df['Team'].dropna().unique())
+    unique_positions = sorted(df['Position'].dropna().unique())
     
     # Team filter in sidebar
     selected_team = st.sidebar.selectbox(
