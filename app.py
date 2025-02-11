@@ -3,6 +3,37 @@ import pandas as pd
 import nfl_data_py as nfl
 from datetime import datetime, date
 
+@st.cache_data
+def load_nfl_data(year):
+    """Load NFL roster data for a given year"""
+    try:
+        # Request roster data with specific columns
+        df = pd.DataFrame() # Initialize empty DataFrame
+        
+        try:
+            # Try to get seasonal roster data
+            df = nfl.import_weekly_rosters([year])
+            if df is not None and not df.empty:
+                # If we have weekly data, take the most recent week for each player
+                df = df.sort_values('week', ascending=False).groupby('player_id').first().reset_index()
+        except:
+            try:
+                # Fallback to plain roster import
+                df = nfl.import_rosters([year])
+            except:
+                st.error("Could not retrieve roster data")
+                return None
+        
+        if df is None or df.empty:
+            st.error(f"No data available for year {year}")
+            return None
+            
+        return df
+        
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+        return None
+
 def get_zodiac_sign(birth_date):
     """Calculate zodiac sign from birth date"""
     try:
@@ -55,26 +86,6 @@ def get_compatible_signs(zodiac):
     }
     return compatibility.get(zodiac, [])
 
-@st.cache_data
-def load_nfl_data(year):
-    """Load NFL roster data for a given year"""
-    try:
-        # Request specific columns we need
-        columns = ['player_name', 'team', 'position', 'jersey_number', 
-                  'birth_date', 'height', 'weight', 'college']
-        
-        df = nfl.import_seasonal_rosters([year], columns)
-        if df is None or len(df) == 0:
-            return None
-            
-        # Clean the data using nfl's built-in cleaner
-        df = nfl.clean_nfl_data(df)
-        return df
-        
-    except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        return None
-
 def calculate_age(birth_date):
     """Calculate age from birth date"""
     if pd.isna(birth_date):
@@ -116,11 +127,10 @@ def main():
     st.sidebar.divider()
     st.sidebar.header("Filters")
 
-    # Year selection
-    current_year = datetime.now().year
+    # Year selection - set to max 2024
     selected_year = st.sidebar.selectbox(
         "Select Year",
-        range(current_year, 1999, -1),
+        range(2024, 2012, -1),  # From 2024 down to 2012
         index=0
     )
 
@@ -137,25 +147,35 @@ def main():
         df['Age'] = df['Birth Date'].apply(calculate_age)
         df['Zodiac'] = df['Birth Date'].apply(get_zodiac_sign)
         
-        # Split player name into first and last name
-        df[['First Name', 'Last Name']] = df['player_name'].str.split(' ', n=1, expand=True)
+        # Split player name into first and last name if player_name exists
+        if 'player_name' in df.columns:
+            df[['First Name', 'Last Name']] = df['player_name'].str.split(' ', n=1, expand=True)
+        elif 'full_name' in df.columns:
+            df[['First Name', 'Last Name']] = df['full_name'].str.split(' ', n=1, expand=True)
+        else:
+            # Create from first and last name if they exist separately
+            df['First Name'] = df.get('first_name', '')
+            df['Last Name'] = df.get('last_name', '')
         
-        # Rename columns
-        df = df.rename(columns={
+        # Rename columns (handling possible variations in column names)
+        column_mappings = {
             'team': 'Team',
             'position': 'Position',
             'jersey_number': 'Number',
             'height': 'Height',
             'weight': 'Weight',
             'college': 'College'
-        })
+        }
         
-        # Select and reorder columns
-        columns = ['First Name', 'Last Name', 'Team', 'Position', 'Number', 
-                  'Birth Date', 'Zodiac', 'Age', 'Height', 'Weight', 'College']
-        df = df[[col for col in columns if col in df.columns]]
+        df = df.rename(columns={k: v for k, v in column_mappings.items() if k in df.columns})
+        
+        # Select and reorder columns, only including those that exist
+        desired_columns = ['First Name', 'Last Name', 'Team', 'Position', 'Number', 
+                         'Birth Date', 'Zodiac', 'Age', 'Height', 'Weight', 'College']
+        actual_columns = [col for col in desired_columns if col in df.columns]
+        df = df[actual_columns]
 
-    # Get unique teams and positions
+    # Get unique teams and positions (handling possible None/NaN values)
     unique_teams = sorted(df['Team'].dropna().unique())
     unique_positions = sorted(df['Position'].dropna().unique())
     
