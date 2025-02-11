@@ -127,11 +127,9 @@ def get_position_zodiac_distribution(df):
         ).reset_index()
     except:
         return pd.DataFrame(columns=['Position', 'Zodiac'])
-        # Data loading and processing
+
 # Data loading and processing
-@st.cache_data
-def load_nfl_data(year):
-  @st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_nfl_data(year):
     """Load NFL roster data for a given year"""
     try:
