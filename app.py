@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime 
@@ -96,4 +95,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
