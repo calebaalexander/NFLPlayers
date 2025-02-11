@@ -1,10 +1,8 @@
-Yes, that's the complete code to handle the HTML roster data with all the required functionality. It includes:
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from bs4 import BeautifulSoup
+import re
 
 def process_roster_data(file_content):
     position_map = {
@@ -97,6 +95,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
-
-Remember to install beautifulsoup4: `pip install beautifulsoup4`
