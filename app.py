@@ -231,6 +231,19 @@ def process_dataframe(df):
             st.error("Could not process NFL data.")
             st.stop()
 def main():
+    try:
+        st.set_page_config(
+            page_title="NFL Teams Explorer",
+            page_icon="🏈",
+            layout="wide",
+            initial_sidebar_state="expanded"
+        )
+    except Exception as e:
+        # If page config is already set, continue
+        pass
+    
+    st.title("🏈 NFL Teams Explorer")
+def main():
     st.title("NFL Players Roster: Zodiac Edition")
     
     # Sidebar inputs
