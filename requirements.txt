@@ -1,6 +1,5 @@
 streamlit==1.31.0
-nfl_data_py==0.3.3
 pandas>=1.0,<2.0
 numpy>=1.0,<2.0
-appdirs>1
-fastparquet>0.5
+requests==2.32.3
+python-dateutil==2.9.0.post0
